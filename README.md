@@ -10,7 +10,7 @@ The original Alder Reach fixture opens at 07:45. On the market street, commuters
 
 [Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
 
-[Watch the morning bus and a resident’s drive to work](captures/bus-commute.mp4) · [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
+[Watch a new playground take shape and children use the slide](captures/neighbourhood-parks.mp4) · [Watch the morning bus and a resident’s drive to work](captures/bus-commute.mp4) · [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
 
 ## Play on Apple Silicon
 
@@ -30,6 +30,7 @@ The simulation starts at **1×** with one local minute passing per real second. 
 | --- | --- |
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
+| Visit parks and playgrounds and view current attendance | P, Parks, or click the grounds |
 | Follow the nearest active construction project | G or Construction |
 | Follow a resident | Click a pedestrian or private car, or choose Meet a resident |
 | Follow Line 1 and see its next stop, queue and load | B, Follow bus, or click a bus |
@@ -84,6 +85,12 @@ The founding road graph determines the route of **Line 1**. Four buses circulate
 
 Building occupancy, workers on shift and shoppers at the till follow these schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
 
+### Parks and playgrounds
+
+The municipal planner looks for homes with poor walking access to an existing garden or playground. It uses the open street graph, housing around the proposed entrance, ground slope, water, factory buffers and available space. Playgrounds also require clearance from arterials. The selected grounds and entrance remain reserved as streets and buildings expand.
+
+Each site opens after 180 city minutes of landscaping. Residents fit walks into free time around work and shopping, linger along the garden path and return home. Some residents are children throughout this prototype. Children walk to play areas and take turns climbing the ladder and using the slide. Press **P** to cycle between facilities. The district map marks parks in green and playgrounds in coral.
+
 ### Local trade
 
 Food producers supply bakeries, cafés and grocers. Textile mills supply outfitters. Each open business has its own inventory and cash account. Staff on shift earn staggered hourly payments from their employer’s till, and staffed workshops pack goods up to their storage limit. Residents with enough money buy one item during a shop visit. A successful sale transfers $12, removes one item from the shelf, and gives the shopper a receipt and a shopping bag.
@@ -114,7 +121,7 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 6 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 7 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -143,6 +150,7 @@ After building the extension and importing the project, run the integration chec
 ```sh
 "$GODOT" --headless --path game --script ../tests/playable.gd
 "$GODOT" --headless --path game --script ../tests/transport.gd
+"$GODOT" --headless --path game --script ../tests/green_spaces.gd
 "$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
 ```
 

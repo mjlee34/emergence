@@ -15,6 +15,10 @@ var bus_line:=PackedVector2Array()
 var bus_dots:=PackedVector2Array()
 var bus_point:=Vector2.ZERO
 signal meet_requested
+signal parks_requested
+var parks_button:=Button.new()
+var green_dots:=PackedVector2Array()
+var green_types:=PackedInt32Array()
 signal district_requested(use:int)
 var district_title:=""
 var construction_note:=""
@@ -133,6 +137,11 @@ func _ready() -> void:
 		b.tooltip_text="Visit a "+["residential street","shopping street","workshop yard"][i]
 		b.pressed.connect(func(): district_requested.emit(i))
 		districts.add_child(b)
+	parks_button.text="Parks"
+	parks_button.tooltip_text="Visit the next park or playground (P)"
+	_style_button(parks_button,false)
+	districts.add_child(parks_button)
+	parks_button.pressed.connect(func(): parks_requested.emit())
 	meet_button.text="Meet a resident"
 	_style_button(meet_button,false)
 	var observers:=HBoxContainer.new()
@@ -274,11 +283,15 @@ func show_life(data:Dictionary,resident:Dictionary,model,bus_view:=false) -> voi
 		var given:=["Mina","Theo","Iris","Leon","Ari","Ella","Milo","Ren","Nora","Emil","Sam","Lina","Alex","Noa","Rae","Kai"]
 		var family:=["Park","Reed","Chen","Hill","Baek","Ford","Kim","Bell","Tan","Cole","Shaw","Ito","Yu","Moon","West","Gray"]
 		identity.text="%s %s  ·  #%d"%[given[v%16],family[(v>>8)%16],resident.id+1]
-		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to","Waiting for Line 1 to","On Line 1 to","Driving to"][resident.activity]
+		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to","Waiting for Line 1 to","On Line 1 to","Driving to","Visiting"][resident.activity]
 		var workplace:="Seeking work" if resident.seeking else "Outside workforce"
+		if resident.child: workplace="Child"
 		if resident.work>=0:
 			workplace="%s  (%s–%s)"%[_address(model,resident.work),_time(resident.shift),_time(resident.finish)]
-		routine_label.text="%s %s\nHome   %s\nWork    %s"%[activity,_address(model,resident.target),_address(model,resident.home),workplace]
+		var destination:=_address(model,resident.target)
+		if resident.facility>=0 and not resident.returning:
+			destination=model.facility(resident.facility).name
+		routine_label.text="%s %s\nHome   %s\nWork    %s"%[activity,destination,_address(model,resident.home),workplace]
 		if resident.work>=0 or resident.shop>=0:
 			routine_label.text+=("\nCommute   " if resident.work>=0 else "\nShopping trips   ")+["On foot","Private car","Line 1 bus"][resident.mode]
 		if resident.bus>=0:
@@ -408,6 +421,12 @@ func _draw() -> void:
 
 
 func sync_map(sim,count:int,buildings:int) -> void:
+	while green_dots.size()<state.get("facilities",0):
+		var green:Dictionary=sim.facility(green_dots.size())
+		green_dots.append(Vector2(green.pos.x,green.pos.z))
+		green_types.append(green.kind)
+		queue_redraw()
+	parks_button.disabled=green_dots.is_empty()
 	if map_paths.size()==count and land_dots.size()==buildings: return
 	while land_dots.size()<buildings:
 		var b:Dictionary=sim.lot(land_dots.size())
@@ -454,6 +473,11 @@ func _draw_plan() -> void:
 			else: draw_polyline(path,ROUTE_COLORS[rank],[.75,1.15,2.0][rank]/scale_factor,true)
 	for i in land_dots.size():
 		draw_circle(land_dots[i],clampf(3.5*scale_factor,1.1,2.7)/scale_factor,USE_COLORS[land_uses[i]])
+	for i in green_dots.size():
+		var dot:=green_dots[i]
+		var r:=4./scale_factor
+		draw_circle(dot,r,INK)
+		draw_circle(dot,r*.76,Color("#a3cd66") if green_types[i]==0 else Color("#f39a75"))
 	if bus_line.size()>1:
 		draw_polyline(bus_line,Color("#77dfe1"),2.7/scale_factor,true)
 		for p in bus_dots: draw_circle(p,2.5/scale_factor,IVORY)
@@ -466,13 +490,17 @@ func _draw_plan() -> void:
 		draw_polyline(freight_line,Color("#faad67"),2.5/scale_factor,true)
 		draw_circle(freight_point,4.2/scale_factor,IVORY)
 	draw_set_transform(Vector2.ZERO)
-	var y:=panel.end.y-28
+	var y:=panel.end.y-45
 	var x:=panel.position.x+12
 	for rank in [2,1,0]:
 		draw_line(Vector2(x,y-4),Vector2(x+12,y-4),ROUTE_COLORS[rank],rank+1.5,true)
 		draw_string(sans,Vector2(x+16,y),["Local","Collector","Arterial"][rank],HORIZONTAL_ALIGNMENT_LEFT,-1,13,IVORY)
 		x+=85
 	for rank in 3:
-		var dot:=panel.position+Vector2(13+rank*87,panel.size.y-11)
+		var dot:=panel.position+Vector2(13+rank*87,panel.size.y-28)
 		draw_circle(dot,3.3,USE_COLORS[rank])
 		draw_string(sans,dot+Vector2(7,4),["Housing","Commerce","Industry"][rank],HORIZONTAL_ALIGNMENT_LEFT,-1,12,IVORY)
+	for i in 2:
+		var dot:=panel.position+Vector2(13+i*87,panel.size.y-11)
+		draw_circle(dot,3.3,Color("#a3cd66") if i==0 else Color("#f39a75"))
+		draw_string(sans,dot+Vector2(7,4),["Park","Playground"][i],HORIZONTAL_ALIGNMENT_LEFT,-1,12,IVORY)

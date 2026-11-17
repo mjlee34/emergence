@@ -99,10 +99,10 @@ func sync(model,orbit,state:Dictionary,fraction:float,selected:int) -> void:
 		var id:=ids[i]
 		var k:=id%groups.size()
 		var p:=poses[i]
-		var scale_factor:=1.0+.035*(id%5)
+		var scale_factor:=(1.0+.035*(id%5))*(.67 if data.children[i] else 1.)
 		var transform3:=Transform3D(Basis(Vector3.UP,p.w).scaled(Vector3.ONE*scale_factor),Vector3(p.x,p.y+.055,p.z))
 		groups[k].set_instance_transform(counts[k],transform3)
-		groups[k].set_instance_custom_data(counts[k],Color((id%71)/71.,1 if modes[i]==3 else (.35 if modes[i]==1 else 0),0,1))
+		groups[k].set_instance_custom_data(counts[k],Color((id%71)/71.,data.motion[i].x,data.motion[i].y,1))
 		counts[k]+=1
 		if bag_flags[i]:
 			bags.set_instance_transform(bag_index,transform3.translated_local(Vector3(.34,.59,.045)))

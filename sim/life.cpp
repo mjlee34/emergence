@@ -350,6 +350,75 @@ void Life::plan_travel(const City &c, Resident &r, double walking) {
   else
     r.outing_return = start + r.trips[0].duration + 45.;
 }
+void Life::open_facility(const City &c, int id) {
+  for (auto &r : residents_)
+    if (r.facility < 0 &&
+        distance(c.facilities()[id].center, c.buildings()[r.home].pos) < 112.)
+      plan_visit(c, r);
+}
+void Life::plan_visit(const City &c, Resident &r) {
+  r.facility = -1;
+  if (!r.child && (r.variation >> 5) % 3 != 0)
+    return;
+  double best = 140.;
+  for (int i = 0; i < int(c.facilities().size()); ++i) {
+    const auto &f = c.facilities()[i];
+    if (f.opens > c.tick() ||
+        distance(f.center, c.buildings()[r.home].pos) >= 112.)
+      continue;
+    auto [it, added] =
+        green_paths_.emplace(std::pair{r.home, i}, int(paths_.size()));
+    if (added)
+      paths_.push_back(connect(
+          c, entrance(c, r.home),
+          {f.frontage, f.sample, f.side, {f.gate, c.height(f.gate) + .34}}));
+    double length = paths_[it->second].lengths.back();
+    int preference =
+        r.child ? int(FacilityKind::Playground) : int((r.variation >> 11) % 2);
+    double score = length + (preference == int(f.kind) ? 0. : 30.);
+    if (score >= best)
+      continue;
+    best = score;
+    r.facility = i;
+    r.leisure_path = it->second;
+    r.visit_walk = std::max(1., length / (2.6 + (r.variation % 8) * .1));
+  }
+  if (r.facility < 0)
+    return;
+  r.visit_stay = 18. + (r.variation >> 8) % 25;
+  double total = 2 * r.visit_walk + r.visit_stay;
+  double depart = r.work >= 0 ? r.leave_home
+                              : (r.shop >= 0 ? 405 + r.variation % 545 : 1440);
+  double returned =
+      r.work >= 0 ? r.finish + r.trips[1].duration
+                  : (r.shop >= 0 ? r.outing_return + r.trips[1].duration : 0.);
+  double early = 380., late = depart - total - 12.;
+  if (late < early || (r.variation % 2 && returned < 1150)) {
+    early = std::max(450., returned + 12.);
+    late = 1230. - total;
+  }
+  if (late < early) {
+    r.facility = -1;
+    return;
+  }
+  r.visit_start = early + (late - early) * ((r.variation >> 16) % 1000) / 999.;
+  if (r.child && c.facilities()[r.facility].kind == FacilityKind::Playground) {
+    double arrived = r.visit_start + r.visit_walk;
+    for (int slot = int(std::ceil((arrived + 4.) / 4.));
+         slot * 4. + 7. < arrived + r.visit_stay; ++slot) {
+      if (slide_slots_.insert({r.facility, int(r.variation >> 28) % 2, slot})
+              .second) {
+        r.slide_slot = slot;
+        break;
+      }
+    }
+  }
+  const int absolute = c.tick() / ticks_per_minute + opening_minute;
+  r.visit_day = c.tick() == 0
+                    ? 0
+                    : absolute / minutes_per_day +
+                          (absolute % minutes_per_day >= r.visit_start);
+}
 void Life::settle(const City &c) {
   while (int(residents_.size()) < c.population()) {
     uint32_t v = scramble(c.seed() + uint32_t(residents_.size()) * 2654435761u);
@@ -363,8 +432,9 @@ void Life::settle(const City &c) {
     Resident r{};
     r.home = home;
     r.variation = v;
-    r.car_owner = (v >> 12) % 100 < 57;
     r.seeks_work = v % 100 < 67;
+    r.child = !r.seeks_work && ((v >> 14) % 4 == 0);
+    r.car_owner = !r.child && (v >> 12) % 100 < 57;
     r.leave_home = 375 + int(v % 145);
     r.lunch = 690 + int((v >> 8) % 69);
     r.finish = r.leave_home + 510 + int((v >> 16) % 41);
@@ -380,6 +450,7 @@ void Life::settle(const City &c) {
       r.first_day =
           minute / minutes_per_day + (minute % minutes_per_day >= departure);
     }
+    plan_visit(c, r);
     residents_.push_back(r);
   }
 }
@@ -393,6 +464,7 @@ void Life::hire_waiting(const City &c) {
         transit_.release(leg.bus);
     assign_work(c, r);
     assign_shop(c, r);
+    plan_visit(c, r);
   }
 }
 DailyState Life::routine(int id, double tick) const {
@@ -404,6 +476,25 @@ DailyState Life::routine(int id, double tick) const {
   };
   if (int(absolute / minutes_per_day) < r.first_day)
     return stay(Activity::Home, r.home);
+  if (r.facility >= 0 && int(absolute / minutes_per_day) >= r.visit_day &&
+      t >= r.visit_start &&
+      (int(absolute / minutes_per_day) + int(r.variation >> 28)) % 2 == 0) {
+    const double elapsed = t - r.visit_start;
+    if (elapsed < 2 * r.visit_walk + r.visit_stay) {
+      DailyState visit{Activity::Walking, r.home, r.home, r.leisure_path};
+      visit.facility = r.facility;
+      if (elapsed < r.visit_walk)
+        visit.progress = elapsed / r.visit_walk;
+      else if (elapsed < r.visit_walk + r.visit_stay) {
+        visit.activity = Activity::Leisure;
+        visit.progress = (elapsed - r.visit_walk) / r.visit_stay;
+      } else {
+        visit.reverse = true;
+        visit.progress = (elapsed - r.visit_walk - r.visit_stay) / r.visit_walk;
+      }
+      return visit;
+    }
+  }
   auto duration = [&](int route, double limit) {
     return route < 0 ? 0.
                      : std::clamp(paths_[route].lengths.back() /
@@ -487,6 +578,77 @@ DailyState Life::routine(int id, double tick) const {
 }
 PersonPose Life::pose(const City &c, int id, const DailyState &s,
                       double tick) const {
+  if (s.activity == Activity::Leisure) {
+    const auto &f = c.facilities()[s.facility];
+    // Enter at the gate, stroll around the planted court, and leave through the
+    // same gate.
+    const double radius = f.radius * .62, stem = f.radius - radius;
+    const double loop = 2. * 3.141592653589793 * radius;
+    double progress = std::clamp(s.progress, 0., 1.);
+    // Some visitors linger partway around the loop to watch play or enjoy the
+    // garden.
+    double stride = .48, crouch = 0.;
+    if ((id % 3) != 0) {
+      const double lookout = .22 + .55 * ((id * 37) % 101) / 100.;
+      if (progress >= .32 && progress < .66)
+        stride = 0.;
+      progress = progress < .32 ? lookout * progress / .32
+                 : progress < .66
+                     ? lookout
+                     : lookout + (1. - lookout) * (progress - .66) / .34;
+    }
+    double d = progress * (2. * stem + loop);
+    double x = 0, z = -f.radius + std::min(d, stem), heading = 0;
+    if (d > stem + loop) {
+      z = -radius - (d - stem - loop);
+      heading = 3.141592653589793;
+    } else if (d > stem) {
+      const double sign = (id % 2) ? 1. : -1., a = sign * (d - stem) / radius;
+      x = std::sin(a) * radius;
+      z = -std::cos(a) * radius;
+      heading = sign * 1.5707963267948966 - a;
+    }
+    const auto &resident = residents_[id];
+    double above = 0.;
+    if (resident.slide_slot >= 0) {
+      const double arrived = resident.visit_start + resident.visit_walk;
+      const double elapsed = s.progress * resident.visit_stay;
+      const double slot = resident.slide_slot * 4. - arrived;
+      // Walk around the tower, climb the rear ladder, slide, and rejoin the
+      // path.
+      struct Mark {
+        double time, x, z, lift;
+      };
+      const double q = -2.65 - (id % 4) * .14;
+      std::array<Mark, 9> marks{{{0., 0., -f.radius, 0.},
+                                 {2.5, q, -2.6, 0.},
+                                 {slot - 1., q, 1.2, 0.},
+                                 {slot, -1.15, 1.16, 0.},
+                                 {slot + 1.5, -1.15, .18, 1.23},
+                                 {slot + 2.2, -1.15, -1.12, 1.23},
+                                 {slot + 3.1, -1.15, -3.04, .22},
+                                 {slot + 4.4, -.30, -4.08, 0.},
+                                 {resident.visit_stay, 0., -f.radius, 0.}}};
+      auto end =
+          std::lower_bound(marks.begin() + 1, marks.end(), elapsed,
+                           [](const Mark &m, double t) { return m.time < t; });
+      if (end == marks.end())
+        --end;
+      const auto &a = *(end - 1), &b = *end;
+      double u = std::clamp((elapsed - a.time) / (b.time - a.time), 0., 1.);
+      x = std::lerp(a.x, b.x, u);
+      z = std::lerp(a.z, b.z, u);
+      above = std::lerp(a.lift, b.lift, u * u * (3. - 2. * u));
+      heading = std::atan2(b.x - a.x, b.z - a.z);
+      double since = elapsed - slot;
+      crouch = std::clamp((since - 1.8) * 2.5, 0., 1.) *
+               std::clamp((3.55 - since) * 2.2, 0., 1.);
+      stride = since >= 1.8 && since <= 3.55 ? 0. : .55;
+    }
+    Point p{f.center.x + x * std::cos(f.yaw) + z * std::sin(f.yaw),
+            f.center.z - x * std::sin(f.yaw) + z * std::cos(f.yaw)};
+    return {p, c.height(p) + .34 + above, heading + f.yaw, stride, crouch};
+  }
   if (s.activity == Activity::Riding)
     return transit_.bus(s.bus, tick / ticks_per_minute + opening_minute).pose;
   if (s.activity == Activity::Waiting) {
@@ -545,7 +707,8 @@ uint64_t Life::digest() const {
   uint64_t h = 14695981039346656037ULL;
   for (const auto &r : residents_) {
     for (int v : {r.home, r.work, r.shop, r.first_day, r.commute, r.errand,
-                  int(r.mode), r.trips[0].bus.run, r.trips[1].bus.run}) {
+                  int(r.mode), r.trips[0].bus.run, r.trips[1].bus.run,
+                  r.facility, r.leisure_path, r.visit_day, r.slide_slot}) {
       h ^= uint32_t(v);
       h *= 1099511628211ULL;
     }

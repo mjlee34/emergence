@@ -3,6 +3,12 @@
 #include <cmath>
 namespace city {
 double distance(Point a, Point b) { return std::hypot(a.x - b.x, a.z - b.z); }
+double segment_distance(Point p, Point a, Point b) {
+  double x = b.x - a.x, z = b.z - a.z;
+  double t =
+      std::clamp(((p.x - a.x) * x + (p.z - a.z) * z) / (x * x + z * z), 0., 1.);
+  return distance(p, {a.x + x * t, a.z + z * t});
+}
 double river_center(double z) {
   return 94 + 29 * std::sin(z * .021 + .4) - .18 * z;
 }

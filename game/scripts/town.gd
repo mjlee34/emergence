@@ -21,6 +21,8 @@ var construction:Dictionary={}
 var roadworks:Dictionary={}
 var court_works:Dictionary={}
 var junction_caps:Dictionary={}
+var greens:Array[Node3D]=[]
+var landscaping:Array[Node3D]=[]
 var street_lights:=Node3D.new()
 var last_light_tick:=-1
 
@@ -60,6 +62,18 @@ func create(sim, landscape) -> void:
 
 func sync(state: Dictionary, fraction: float) -> void:
 	var time:float=state.tick+fraction
+	while greens.size()<state.facilities:
+		var space:=preload("res://scripts/green_space.gd").new()
+		add_child(space)
+		if not street_crown: street_crown=preload("res://scripts/landscape.gd").crown_mesh(preload("res://art/deciduous.png"),4.4)
+		space.setup(model,land,model.facility(greens.size()),street_crown)
+		greens.append(space)
+		space.advance(time)
+		if space.data.opens>time: landscaping.append(space)
+	for i in range(landscaping.size()-1,-1,-1):
+		var space=landscaping[i]
+		space.advance(time)
+		if time>=space.data.opens: landscaping.remove_at(i)
 	var initial:=roads==0
 	var opened:=false
 	while roads<state.roads:

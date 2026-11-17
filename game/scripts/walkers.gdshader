@@ -8,5 +8,9 @@ void vertex(){
 	float arm=smoothstep(.16,.23,abs(VERTEX.x))*clamp((1.44-VERTEX.y)/.48,0.0,1.0);
 	VERTEX.z+=sign(VERTEX.x)*beat*(leg*.24-arm*.16);
 	VERTEX.y+=abs(beat)*.026;
+	// Bring the feet forward and lower the hips as a child sits on the chute.
+	float seated=INSTANCE_CUSTOM.b;
+	VERTEX.z+=seated*.51*leg;
+	VERTEX.y-=seated*(.41-.20*leg);
 }
 void fragment(){ALBEDO=tint.rgb;ROUGHNESS=.86;}

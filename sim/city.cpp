@@ -26,12 +26,6 @@ RoadClass hierarchy(int x, int y, int c, int r) {
     return RoadClass::Collector;
   return RoadClass::Local;
 }
-double segment_distance(Point p, Point a, Point b) {
-  double x = b.x - a.x, z = b.z - a.z;
-  double t =
-      std::clamp(((p.x - a.x) * x + (p.z - a.z) * z) / (x * x + z * z), 0., 1.);
-  return distance(p, {a.x + x * t, a.z + z * t});
-}
 } // namespace
 double road_width(RoadClass type) {
   constexpr double widths[] = {4.2, 7.2, 14.2};
@@ -84,6 +78,7 @@ City::City(uint32_t seed, Site site) : site_(std::move(site)), seed_(seed), rand
   population_ = capacity_ * 95 / 100;
   for (int i = 0; i < int(buildings_.size()); ++i)
     life_.open(*this, i, buildings_[i].capacity);
+  plan_facilities();
   life_.start_service(*this);
   life_.settle(*this);
   for (int i = 0; i < int(buildings_.size()); ++i)
@@ -224,6 +219,15 @@ bool City::grow() {
       viable = crossing ||
                (!site_.inland_water(p) && site_.elevation(p) > 1.8 && site_.elevation(prev) > 1.8 &&
                 std::abs(height(p) - height(prev)) / distance(prev, p) < .24);
+      for (const auto &f : facilities_)
+        if (segment_distance(f.center, prev, p) <
+                road_width(type) * .5 +
+                    (type == RoadClass::Arterial &&
+                             f.kind == FacilityKind::Playground
+                         ? 18.
+                         : f.radius + 1.5) ||
+            segment_distance(f.gate, prev, p) < road_width(type) * .5 + 1.4)
+          viable = false;
       prev = p;
     }
     if (!viable)
@@ -284,6 +288,10 @@ bool City::develop(int e, bool initial) {
             road_width(other.type) * .5 + 4.3)
           clear = false;
     }
+    for (const auto &f : facilities_)
+      if (distance(p, f.center) < f.radius + 6.4 ||
+          segment_distance(p, f.gate, roads_[f.frontage].path[f.sample]) < 6.4)
+        clear = false;
     if (!clear)
       continue;
     int style = int(draw() >> 8) % 997;
@@ -300,6 +308,10 @@ bool City::develop(int e, bool initial) {
     if (!initial && use == Use::Housing && life_.workforce() > life_.jobs() &&
         road.type != RoadClass::Local && style % 3 != 0)
       use = yard ? Use::Works : Use::Shops;
+    if (use == Use::Works &&
+        std::any_of(facilities_.begin(), facilities_.end(),
+                    [&](const auto &f) { return distance(f.center, p) < 25.; }))
+      continue;
     Building lot{
         p, -std::atan2(dz, dx), style, 0, initial ? -build_time : tick_, use, e,
         1};
@@ -437,10 +449,12 @@ void City::advance(int ticks) {
       const auto &road = roads_[road_openings_.begin()->second];
       record(road.bridge ? "River bridge opened to traffic" : "Street opened to traffic");
       road_openings_.erase(road_openings_.begin());
+      access_changed_ = true;
     }
     while (!completions_.empty() && completions_.front().tick <= tick_) {
       auto project = completions_.front();
       capacity_ += project.beds;
+      access_changed_ |= project.beds > 0;
       life_.open(*this, project.lot, project.beds);
       economy_.open(*this, project.lot);
       auto use = buildings_[project.lot].use;
@@ -467,9 +481,23 @@ void City::advance(int ticks) {
                                     : int(draw() % roads_.size());
       for (int j = 0; j < int(roads_.size()) && !built; ++j)
         built = develop((start + j) % roads_.size(), false);
-      if (!built && !grow() && !redevelop())
-        vacant_ticks_ = tick_ + 192 * planning_interval;
+      if (!built) {
+        if (grow())
+          develop(int(roads_.size()) - 1, false);
+        else if (!redevelop())
+          vacant_ticks_ = tick_ + 192 * planning_interval;
+      }
     }
+    if (tick_ % (48 * planning_interval) == 0 &&
+        (access_changed_ || surveyed_population_ != population_))
+      plan_facilities();
+    for (size_t f = 0; f < facilities_.size(); ++f)
+      if (facilities_[f].opens == tick_) {
+        life_.open_facility(*this, int(f));
+        record(facilities_[f].kind == FacilityKind::Park
+                   ? "Neighbourhood park opened"
+                   : "Playground opened");
+      }
     economy_.update(*this);
   }
 }
@@ -487,6 +515,16 @@ uint64_t City::digest() const {
     mix(std::bit_cast<uint64_t>(site_.longitude));
     for (auto y : site_.elevations) mix(y);
     for (auto water : site_.lake) mix(water);
+  }
+  for (const auto &f : facilities_) {
+    mix(int(f.kind));
+    mix(f.frontage);
+    mix(f.sample);
+    mix(f.side);
+    mix(std::bit_cast<uint64_t>(f.center.x));
+    mix(std::bit_cast<uint64_t>(f.center.z));
+    mix(f.started);
+    mix(f.opens);
   }
   mix(life_.digest());
   mix(economy_.digest());

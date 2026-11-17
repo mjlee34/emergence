@@ -11,7 +11,7 @@ func _ready() -> void:
 	add_child(layer)
 	# Historical fixture captures and benchmarks keep their explicit entry point.
 	for arg in OS.get_cmdline_user_args():
-		if arg in ["--fixture","--atlas","--detail","--street","--freight","--meet","--no-hud"] or arg.begins_with("--at=") or arg.begins_with("--capture=") or arg.begins_with("--seed=") or arg.begins_with("--bus=") or arg.begins_with("--site-") or arg.begins_with("--speed=") or arg.begins_with("--district=") or arg.begins_with("--resident=") or arg.begins_with("--counter="):
+		if arg in ["--fixture","--atlas","--detail","--street","--freight","--meet","--no-hud"] or arg.begins_with("--at=") or arg.begins_with("--capture=") or arg.begins_with("--seed=") or arg.begins_with("--park=") or arg.begins_with("--bus=") or arg.begins_with("--site-") or arg.begins_with("--speed=") or arg.begins_with("--district=") or arg.begins_with("--resident=") or arg.begins_with("--counter="):
 			_attach(World.instantiate())
 			return
 	_show_picker()

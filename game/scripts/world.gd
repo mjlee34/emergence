@@ -14,6 +14,8 @@ var land:=Landscape.new()
 var town:=Town.new()
 var trade:=Trade.new()
 var transit:=preload("res://scripts/transit.gd").new()
+var green_id:=-1
+var capture_green:=-1
 var following_bus:=-1
 var observer_angle:=0.
 var angle_origin:=Vector3.INF
@@ -57,6 +59,7 @@ func _ready() -> void:
 		if arg.begins_with("--site-lot="): fixed_site=Vector2i(1,int(arg.trim_prefix("--site-lot=")))
 		if arg=="--no-hud": hud.visible=false
 		if arg.begins_with("--bus="): capture_bus=clampi(int(arg.trim_prefix("--bus=")),0,3)
+		if arg.begins_with("--park="): capture_green=int(arg.trim_prefix("--park="))
 		if arg=="--freight": capture_freight=true
 		if arg.begins_with("--counter="): capture_counter=int(arg.trim_prefix("--counter="))
 		if arg=="--street": street_capture=true
@@ -104,6 +107,7 @@ func _ready() -> void:
 	hud.speed_selected.connect(_select_speed)
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
+	hud.parks_requested.connect(_visit_green)
 	hud.bus_requested.connect(_watch_bus)
 	hud.meet_requested.connect(_meet)
 	hud.construction_requested.connect(_toggle_construction)
@@ -119,6 +123,7 @@ func _ready() -> void:
 	if capture_counter>=0 and not model.business(capture_counter).is_empty():
 		business_id=capture_counter
 		_view_business()
+	if capture_green>=0 and capture_green<state.facilities: _visit_green(capture_green)
 	if capture_bus>=0: _watch_bus(capture_bus)
 	if capture_freight: _follow_delivery()
 	if meet_capture: _meet()
@@ -217,6 +222,11 @@ func _sync() -> void:
 	people.sync(model,orbit,state,remainder,selected)
 	hud.display(state,speed,orbit.azimuth)
 	hud.sync_map(model,state.roads,state.buildings)
+	if green_id>=0:
+		var green:Dictionary=town.greens[green_id].data
+		var visitors:int=state.visitors[green_id]
+		hud.district_title=green.name
+		hud.construction_note=("%d visiting now  ·  Open to the neighbourhood"%visitors) if state.tick>=green.opens else "Landscaping in progress"
 	hud.show_life(state,info,model,following_bus>=0)
 	hud.show_transit(transit.network,transit.service,following_bus,info)
 	if business_id<0 and not manifests.is_empty(): business_id=manifests[0].shop
@@ -235,6 +245,7 @@ func _sync() -> void:
 	atmosphere.ambient_light_energy=lerpf(.20,.58,daylight)
 
 func _toggle_construction() -> void:
+	_leave_green()
 	following_bus=-1
 	watching_construction=not watching_construction
 	construction_target=Vector2i(-1,-1)
@@ -249,7 +260,14 @@ func _toggle_construction() -> void:
 		hud.district_title=""
 		hud.construction_note=""
 
+func _leave_green() -> void:
+	if green_id>=0:
+		green_id=-1
+		hud.district_title=""
+		hud.construction_note=""
+
 func _leave_site() -> void:
+	_leave_green()
 	following_bus=-1
 	if watching_construction: _toggle_construction()
 
@@ -364,6 +382,31 @@ func _fit_city() -> void:
 	watching=false
 	selected=-1
 	orbit.home()
+
+func _visit_green(id:=-1) -> void:
+	if town.greens.is_empty(): return
+	if id<0: id=(green_id+1)%town.greens.size()
+	_leave_site()
+	following_van=-1
+	watching=false
+	selected=-1
+	green_id=id
+	var green:Dictionary=town.greens[id].data
+	orbit.following=false
+	orbit.extent=green.radius*2.9
+	orbit.elevation=.71
+	orbit.pivot=green.pos+Vector3.UP*.85
+	orbit.azimuth=_clear_angle(orbit.pivot,green.yaw+PI+.38,Vector3.RIGHT*3.)
+	orbit.update_view()
+
+func _pick_green(screen:Vector2) -> int:
+	var origin:=orbit.project_ray_origin(screen)
+	var ray:=orbit.project_ray_normal(screen)
+	for id in town.greens.size():
+		var green:Dictionary=town.greens[id].data
+		var hit=Plane(Vector3.UP,green.pos.y+.32).intersects_ray(origin,ray)
+		if hit!=null and hit.distance_to(green.pos)<green.radius and people._in_sight(orbit,hit+Vector3.UP*.35,town.sites): return id
+	return -1
 
 func _street_view() -> void:
 	_district_view(1)
@@ -485,6 +528,10 @@ func _unhandled_input(event:InputEvent) -> void:
 			elif vehicle.x==0: _watch(vehicle.y)
 			elif vehicle.x==1: _watch_bus(vehicle.y)
 			else:
+				var park:=_pick_green(event.position)
+				if park>=0:
+					_visit_green(park)
+					return
 				var at:=_pick_business(event.position)
 				if at>=0:
 					business_id=at
@@ -527,6 +574,7 @@ func _input(event:InputEvent) -> void:
 		match event.keycode:
 			KEY_M: map_requested.emit()
 			KEY_B: _watch_bus()
+			KEY_P: _visit_green()
 			KEY_G: _toggle_construction()
 			KEY_H: _fit_city()
 			KEY_V: _street_view()

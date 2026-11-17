@@ -38,6 +38,7 @@ protected:
                          &CityModel::renewed_lot);
     ClassDB::bind_method(D_METHOD("street", "index"), &CityModel::street);
     ClassDB::bind_method(D_METHOD("lot", "index"), &CityModel::lot);
+    ClassDB::bind_method(D_METHOD("facility", "id"), &CityModel::facility);
     ClassDB::bind_method(D_METHOD("bus_network"), &CityModel::bus_network);
     ClassDB::bind_method(D_METHOD("mobility", "fraction"),
                          &CityModel::mobility);
@@ -77,17 +78,23 @@ public:
     d["minute"] = absolute % city::minutes_per_day;
     d["day"] = 1 + absolute / city::minutes_per_day;
     d["construction_ticks"] = city::construction_ticks;
-    std::array<int, 7> totals{};
+    std::array<int, 8> totals{};
+    PackedInt32Array visitors;
+    visitors.resize(state.facilities().size());
     PackedInt32Array occupants;
     occupants.resize(state.buildings().size());
     const auto &life = state.life();
     for (int id = 0; id < state.population(); ++id) {
       auto action = life.routine(id, state.tick());
       ++totals[int(action.activity)];
+      if (action.activity == city::Activity::Leisure)
+        ++visitors.ptrw()[action.facility];
       if (int(action.activity) < int(city::Activity::Walking))
         ++occupants.ptrw()[action.to];
     }
     d["occupants"] = occupants;
+    d["visitors"] = visitors;
+    d["facilities"] = int(state.facilities().size());
     d["home"] = totals[0];
     d["at_work"] = totals[1];
     d["shopping"] = totals[2];
@@ -126,7 +133,10 @@ public:
     d["work"] = r.work;
     d["shop"] = r.shop;
     d["seeking"] = r.seeks_work;
+    d["child"] = r.child;
     d["activity"] = int(activity.activity);
+    d["facility"] = activity.facility;
+    d["returning"] = activity.reverse;
     d["mode"] = int(r.mode);
     d["stop"] = activity.stop;
     d["bus"] = activity.bus;
@@ -182,7 +192,8 @@ public:
                            int selected) const {
     const auto &life = state.life();
     PackedVector4Array poses;
-    PackedInt32Array ids, modes, bags;
+    PackedInt32Array ids, modes, bags, children;
+    PackedVector2Array motion;
     std::vector<int> outdoor(state.buildings().size(), 0);
     // Residents indoors remain in occupancy totals. Sample the visible street
     // crowd at city scale.
@@ -195,7 +206,8 @@ public:
       if (s.activity == city::Activity::Riding ||
           s.activity == city::Activity::Driving)
         return;
-      const bool indoors = !walking && s.activity != city::Activity::Waiting;
+      const bool indoors = !walking && s.activity != city::Activity::Waiting &&
+                           s.activity != city::Activity::Leisure;
       if (indoors) {
         if (s.activity == city::Activity::Home ||
             (s.activity == city::Activity::Work && b.use == city::Use::Shops))
@@ -215,7 +227,11 @@ public:
           p.yaw = b.yaw + slot * 1.8;
       }
       poses.push_back(Vector4(p.pos.x, p.height, p.pos.z, p.yaw));
+      motion.push_back(Vector2(
+          walking ? 1. : (s.activity == city::Activity::Work ? .35 : p.stride),
+          p.crouch));
       ids.push_back(id);
+      children.push_back(life.people()[id].child);
       modes.push_back(int(s.activity));
       const auto &w = state.economy().wallets()[id];
       bags.push_back(w.receipt >= 0 && w.shop >= 0 &&
@@ -234,6 +250,8 @@ public:
     d["ids"] = ids;
     d["modes"] = modes;
     d["bags"] = bags;
+    d["children"] = children;
+    d["motion"] = motion;
     return d;
   }
   Dictionary business(int id) const {
@@ -346,6 +364,26 @@ public:
     d["floors"] = b.floors;
     d["started"] = b.started;
     d["previous_floors"] = b.previous_floors;
+    return d;
+  }
+  Dictionary facility(int id) const {
+    Dictionary d;
+    ERR_FAIL_INDEX_V(id, int(state.facilities().size()), d);
+    const auto &f = state.facilities()[id];
+    d["kind"] = int(f.kind);
+    d["name"] = f.kind == city::FacilityKind::Park ? "Neighbourhood park"
+                                                   : "Neighbourhood playground";
+    d["pos"] = surface(f.center);
+    d["gate"] = surface(f.gate);
+    const auto &road = state.roads()[f.frontage];
+    double offset = city::road_width(road.type) * .5 + .48;
+    auto at = road.path[f.sample];
+    d["curb"] = surface(
+        {at.x + std::sin(f.yaw) * offset, at.z + std::cos(f.yaw) * offset});
+    d["yaw"] = f.yaw;
+    d["radius"] = f.radius;
+    d["started"] = f.started;
+    d["opens"] = f.opens;
     return d;
   }
   Dictionary bus_network() const {

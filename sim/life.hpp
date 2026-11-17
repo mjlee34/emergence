@@ -3,12 +3,22 @@
 #include <array>
 #include <cstdint>
 #include <map>
+#include <set>
 #include <vector>
 namespace city {
 class City;
 constexpr int minutes_per_day = 1440, ticks_per_minute = 4,
               opening_minute = 465;
-enum class Activity { Home, Work, Shopping, Walking, Waiting, Riding, Driving };
+enum class Activity {
+  Home,
+  Work,
+  Shopping,
+  Walking,
+  Waiting,
+  Riding,
+  Driving,
+  Leisure
+};
 enum class Mode { Walk, Car, Bus };
 struct CommuteLeg {
   int drive = -1;
@@ -22,8 +32,11 @@ struct Resident {
   int leave_home, lunch, finish;
   double commute_minutes = 0;
   double outing_return = 0;
+  int facility = -1, leisure_path = -1, visit_day = 0;
+  double visit_start = 0, visit_walk = 0, visit_stay = 0;
   Mode mode = Mode::Walk;
-  bool car_owner = false;
+  bool car_owner = false, child = false;
+  int slide_slot = -1;
   std::array<CommuteLeg, 2> trips;
 };
 struct DailyState {
@@ -33,6 +46,7 @@ struct DailyState {
   bool reverse = false;
   int stop = -1, bus = -1, drive = -1;
   bool last_mile = false;
+  int facility = -1;
 };
 struct Occupancy {
   int beds = 0, housed = 0, jobs = 0, hired = 0;
@@ -44,6 +58,7 @@ public:
   const auto &drive_paths() const { return drives_; }
   void open(const City &city, int lot, int beds);
   void settle(const City &city);
+  void open_facility(const City &city, int id);
   void hire_waiting(const City &city);
   DailyState routine(int id, double tick) const;
   PersonPose pose(const City &city, int id, const DailyState &state,
@@ -63,6 +78,9 @@ private:
   std::vector<std::vector<DriveLeg>> drives_;
   std::map<std::pair<int, int>, int> drive_cache_, access_cache_;
   std::vector<Resident> residents_;
+  std::map<std::pair<int, int>, int> green_paths_;
+  std::set<std::array<int, 3>> slide_slots_;
+  void plan_visit(const City &city, Resident &resident);
   void plan_travel(const City &city, Resident &r, double walking);
   BusTrip bus_option(const City &city, int a, int b, double start, double pace);
   int access_path(const City &city, int lot, int stop);

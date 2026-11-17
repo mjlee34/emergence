@@ -9,6 +9,64 @@
     if (!(expr))                                                               \
       throw std::runtime_error(#expr);                                         \
   } while (false)
+void check_facilities() {
+  using namespace city;
+  City c;
+  CHECK(c.facilities().size() == 2);
+  int visitors[2] = {}, play = 0;
+  std::set<std::array<int, 3>> slots;
+  for (int i = 0; i < c.population(); ++i) {
+    const auto &r = c.life().people()[i];
+    if (r.facility < 0)
+      continue;
+    const auto &f = c.facilities()[r.facility];
+    int day = int(r.variation >> 28) % 2;
+    auto tick = [&](double min) {
+      return (day * minutes_per_day + min - opening_minute) * ticks_per_minute;
+    };
+    double arrived = r.visit_start + r.visit_walk;
+    auto walk = c.life().routine(i, tick(r.visit_start + r.visit_walk * .5));
+    auto visit = c.life().routine(i, tick(arrived + 1.));
+    auto back =
+        c.life().routine(i, tick(arrived + r.visit_stay + r.visit_walk * .5));
+    CHECK(walk.activity == Activity::Walking && walk.facility == r.facility &&
+          !walk.reverse);
+    CHECK(visit.activity == Activity::Leisure && visit.facility == r.facility);
+    CHECK(back.activity == Activity::Walking && back.reverse);
+    CHECK(c.life()
+              .routine(i, tick(arrived + r.visit_stay + r.visit_walk + .1))
+              .activity == Activity::Home);
+    CHECK(distance(c.life().paths()[walk.route].points.back().pos, f.gate) <
+          .01);
+    ++visitors[int(f.kind)];
+    if (r.slide_slot >= 0) {
+      CHECK(r.child && !r.car_owner && f.kind == FacilityKind::Playground);
+      CHECK(slots.insert({r.facility, day, r.slide_slot}).second);
+      auto t = tick(r.slide_slot * 4. + 1.75);
+      auto pose = c.life().pose(c, i, c.life().routine(i, t), t);
+      CHECK(pose.height - c.height(pose.pos) > 1.2);
+      ++play;
+    }
+  }
+  CHECK(visitors[0] > 0 && visitors[1] > 0 && play > 0);
+  c.advance(23040);
+  CHECK(c.facilities().size() > 2);
+  for (const auto &f : c.facilities()) {
+    CHECK(c.roads()[f.frontage].opens <= std::max(f.started, 0));
+    CHECK(!c.roads()[f.frontage].bridge &&
+          c.roads()[f.frontage].type != RoadClass::Arterial);
+    for (int a = 0; a < 8; ++a) {
+      Point p{f.center.x + f.radius * std::cos(a * .785398),
+              f.center.z + f.radius * std::sin(a * .785398)};
+      CHECK(!c.site().inland_water(p) && c.site().elevation(p) > 1.);
+    }
+    for (const auto &b : c.buildings()) {
+      CHECK(distance(f.center, b.pos) >= f.radius + 6.4);
+      if (b.use == Use::Works)
+        CHECK(distance(f.center, b.pos) >= 25.);
+    }
+  }
+}
 void check_commuting() {
   using namespace city;
   City c(147);
@@ -109,6 +167,7 @@ void check_geographic_terrain() {
   for (const auto &r : inland.roads())
     for (auto p : r.path)
       CHECK(inland.street_height(r, p) == site.height(p));
+  CHECK(inland.facilities().size() == 2);
   inland.advance(1501);
   auto recovered = restore(checkpoint(inland));
   CHECK(recovered && recovered->digest() == inland.digest());
@@ -210,6 +269,7 @@ void check_construction() {
 
 int main() {
   using namespace city;
+  check_facilities();
   check_commuting();
   check_geographic_terrain();
   check_market();
@@ -315,7 +375,7 @@ int main() {
   }
   CHECK(observed >= 0);
   const auto &record = opening.life().people()[observed];
-  std::array<int, 4> observed_states{};
+  std::array<int, 8> observed_states{};
   bool commute = false, lunch = false, returned = false;
   for (int minute = 0; minute < minutes_per_day; ++minute) {
     auto s = opening.life().routine(
@@ -333,8 +393,8 @@ int main() {
       CHECK(s.activity == Activity::Home && s.to == record.home);
   }
   CHECK(commute && lunch && returned);
-  for (int duration : observed_states)
-    CHECK(duration > 0);
+  for (int i = 0; i <= int(Activity::Walking); ++i)
+    CHECK(observed_states[i] > 0);
   const auto renewed = restore(checkpoint(regional));
   CHECK(renewed && renewed->digest() == regional.digest());
   std::cout << "Regional replay: " << regional.population() << " residents, "

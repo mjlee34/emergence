@@ -39,6 +39,13 @@ struct Building {
   int frontage, floors;
   int previous_floors = 0;
 };
+enum class FacilityKind { Park, Playground };
+struct Facility {
+  FacilityKind kind;
+  Point center, gate;
+  double yaw, radius;
+  int frontage, sample, side, started, opens;
+};
 struct Vehicle {
   int edge, from, destination;
   double along, speed;
@@ -60,6 +67,7 @@ public:
   uint32_t seed() const { return seed_; }
   int capacity() const { return capacity_; }
   const Life &life() const { return life_; }
+  const auto &facilities() const { return facilities_; }
   const auto &nodes() const { return nodes_; }
   const auto &roads() const { return roads_; }
   const auto &buildings() const { return buildings_; }
@@ -80,7 +88,11 @@ private:
   std::vector<Junction> nodes_;
   std::vector<Road> roads_;
   std::vector<Building> buildings_;
+  std::vector<Facility> facilities_;
   std::vector<Event> events_;
+  bool access_changed_ = false;
+  int surveyed_population_ = 0;
+  void plan_facilities();
   std::map<std::pair<int, int>, int> node_index_;
   std::vector<int> renewals_;
   struct Completion {

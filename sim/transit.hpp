@@ -17,6 +17,7 @@ struct Footpath {
 struct PersonPose {
   Point pos;
   double height, yaw;
+  double stride = 0, crouch = 0;
 };
 PersonPose follow_path(const Footpath &path, double progress, bool forward,
                        double offset = 0);

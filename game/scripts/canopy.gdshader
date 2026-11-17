@@ -2,6 +2,7 @@ shader_type spatial;
 render_mode cull_disabled;
 uniform sampler2D crown : source_color, filter_linear_mipmap, repeat_disable;
 uniform float height = 8.0;
+uniform float crown_fraction = 1.0;
 varying float tier;
 varying float variant;
 varying vec3 shade;
@@ -16,7 +17,7 @@ void vertex(){
 	MODELVIEW_MATRIX=mat4(vec4(scale,0.,0.,0.),vec4(0.,scale,0.,0.),vec4(0.,0.,scale,0.),VIEW_MATRIX*vec4(center,1.));
 }
 void fragment(){
-	vec2 uv=vec2(variant+UV.x,UV.y)/vec2(2.,3.);
+	vec2 uv=vec2(variant+UV.x,UV.y*crown_fraction)/vec2(2.,3.);
 	vec4 a=texture(crown,uv+vec2(0.,floor(tier)/3.));
 	vec4 b=texture(crown,uv+vec2(0.,min(2.,floor(tier)+1.)/3.));
 	float t=smoothstep(.15,.85,fract(tier));
