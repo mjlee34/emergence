@@ -1,0 +1,9 @@
+Generic passenger car pack
+Copyright Comrade1280. Creative Commons Attribution 4.0 International.
+Source: https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5
+Author: https://sketchfab.com/comrade1280
+License: https://creativecommons.org/licenses/by/4.0/
+
+EMERGENCE adapts five of the models. Meshes were merged, aligned and annotated
+for animated wheels. Textures were resized, packed and masked for individual
+paint colours. The rendering materials are specific to EMERGENCE.

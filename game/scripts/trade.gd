@@ -1,9 +1,11 @@
 extends Node3D
 const Forms=preload("res://scripts/forms.gd")
-const TEAL=Color("#197f75")
-const CREAM=Color("#f1ddac")
+const TEAL=Color("#49615c")
+const CREAM=Color("#d1ccc0")
 var truck_mesh:Mesh
 var porter_mesh:Mesh
+var porter_clothing:=ShaderMaterial.new()
+var parcel_mesh:Mesh
 var trucks:Dictionary={}
 var anchors:Dictionary={}
 var stacks:Array[MultiMesh]=[]
@@ -11,31 +13,36 @@ var tag:=Label3D.new()
 var stock_revision:=-1
 
 func _ready() -> void:
-	var g=Forms.new()
+	var g=Forms.new(true)
+	g.finish=Forms.Finish.ENAMEL
 	g.box(Vector3(0,.53,0),Vector3(4.35,.38,1.68),Color("#39494a"))
 	g.box(Vector3(-.66,1.43,0),Vector3(3.06,1.72,1.81),CREAM)
 	g.box(Vector3(-.66,1.19,0),Vector3(3.1,.52,1.84),TEAL)
 	g.box(Vector3(-.66,2.34,0),Vector3(3.14,.16,1.93),TEAL)
 	g.box(Vector3(1.53,.96,0),Vector3(1.44,.83,1.70),TEAL)
-	g.box(Vector3(1.39,1.61,0),Vector3(1.04,.60,1.56),Color("#49686b"))
+	g.finish=Forms.Finish.WINDSCREEN
+	g.box(Vector3(1.39,1.61,0),Vector3(1.04,.60,1.56),Color("#344951"))
+	g.quad(Vector3(2.12,1.30,-.77),Vector3(2.12,1.30,.77),Vector3(1.89,1.90,.77),Vector3(1.89,1.90,-.77),Color("#344951"),Vector3.RIGHT)
+	g.finish=Forms.Finish.ENAMEL
 	g.box(Vector3(1.37,1.95,0),Vector3(1.16,.12,1.69),CREAM)
 	for side in [-1,1]:
+		g.beam(Vector3(2.12,1.30,side*.77),Vector3(1.89,1.92,side*.77),.054,CREAM)
+		g.box(Vector3(1.73,1.56,side*.97),Vector3(.14,.18,.12),Color("#343b3a"))
+		g.finish=Forms.Finish.HEADLIGHT
 		g.box(Vector3(2.26,1.06,side*.53),Vector3(.08,.23,.35),Color("#fff1c4"))
+		g.finish=Forms.Finish.TAIL_LIGHT
 		g.box(Vector3(-2.22,.89,side*.7),Vector3(.08,.20,.17),Color("#ce6048"))
+		g.finish=Forms.Finish.PLAIN
 		for x in [-1.34,1.47]:
 			g.wheel(Vector3(x,.43,side*.80),.38,side)
 	truck_mesh=g.mesh()
-	var porter=Forms.new()
-	porter.box(Vector3(-.16,.39,.14),Vector3(.22,.62,.22),Color("#3c4f59"))
-	porter.box(Vector3(.10,.39,-.13),Vector3(.22,.62,.22),Color("#3c4f59"))
-	porter.box(Vector3(0,1.02,0),Vector3(.49,.70,.32),TEAL)
-	porter.taper(Vector3(0,1.38,0),.19,.19,.34,8,Color("#bc8c68"))
-	porter.box(Vector3(0,1.76,.04),Vector3(.47,.12,.44),CREAM)
-	for side in [-1,1]:
-		porter.box(Vector3(side*.26,1.08,.18),Vector3(.14,.18,.45),TEAL)
-	porter.box(Vector3(0,1.02,.4),Vector3(.63,.49,.47),Color("#c58c53"))
-	porter.box(Vector3(0,1.04,.4),Vector3(.12,.51,.49),CREAM)
-	porter_mesh=porter.mesh()
+	porter_mesh=Forms.imported_mesh(preload("res://art/residents/Male_Adult_05.glb"))
+	porter_clothing.shader=preload("res://scripts/walkers.gdshader")
+	porter_clothing.set_shader_parameter("clothing",preload("res://art/residents/Male_Adult_05.png"))
+	var parcel=Forms.new()
+	parcel.box(Vector3.ZERO,Vector3(.54,.42,.38),Color("#ab8b67"))
+	parcel.box(Vector3.ZERO,Vector3(.07,.43,.39),Color("#d1bc95"))
+	parcel_mesh=parcel.mesh()
 	for kind in 3:
 		var box=Forms.new()
 		if kind==2:
@@ -85,6 +92,11 @@ func _van(id:int) -> Dictionary:
 		body.add_child(lettering)
 	var porter:=MeshInstance3D.new()
 	porter.mesh=porter_mesh
+	porter.material_override=porter_clothing
+	var parcel:=MeshInstance3D.new()
+	parcel.mesh=parcel_mesh
+	parcel.position=Vector3(0,.87,.27)
+	porter.add_child(parcel)
 	add_child(porter)
 	trucks[id]={"body":body,"porter":porter}
 	return trucks[id]

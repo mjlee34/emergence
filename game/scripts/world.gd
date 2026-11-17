@@ -193,6 +193,9 @@ func _sync() -> void:
 	weather=model.weather(remainder)
 	weather_view.sync(weather,state.tick+remainder,orbit)
 	land.detail_near(orbit.pivot,orbit.extent)
+	for material in town.car_materials:
+		material.set_shader_parameter("lamps",weather_view.lamps)
+		material.set_shader_parameter("wetness",weather.wetness)
 	town.sync(state,remainder,weather_view.lamps)
 	town.update_detail(orbit.global_position)
 	var calls:Dictionary={}

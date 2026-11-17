@@ -43,8 +43,8 @@ func create(sim) -> void:
 	for sign_dir in [-1,1]:
 		var z_edge:int=region.y if sign_dir==1 else -region.y-horizon
 		var x_edge:int=region.x if sign_dir==1 else -region.x-horizon
-		_patch(Rect2i(-region.x-horizon,z_edge,2*(region.x+horizon),horizon),80)
-		_patch(Rect2i(x_edge,-region.y,horizon,2*region.y),80)
+		_patch(Rect2i(-region.x-horizon,z_edge,2*(region.x+horizon),horizon),40)
+		_patch(Rect2i(x_edge,-region.y,horizon,2*region.y),40)
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(region+Vector2i(horizon,horizon))*2.
@@ -56,19 +56,19 @@ func create(sim) -> void:
 	_forest(rng)
 	if not model.is_geographic(): _rocks(rng)
 
-func _facet(g,a: Vector3,b: Vector3,c: Vector3) -> void:
-	var p := (a+b+c)/3
-	var grass := Color("#a9b575").lerp(Color("#789660"),0.5+0.3*sin(p.x*.051)+0.18*cos(p.z*.115))
-	grass = grass.lerp(Color("#667c65"),clampf((p.y-12)/30,0,0.92))
-	var slope := 1.0-absf((b-a).cross(c-a).normalized().y)
-	var rock := Color("#bab7a1").lerp(Color("#879386"),0.5+0.35*sin(p.y*.56))
-	grass = grass.lerp(rock,clampf((slope-0.1)*3.3+maxf(p.y-33,0)*.046,0,1))
-	if p.y-sea<2.9: grass = Color("#d3c397").lerp(grass,smoothstep(.6,2.9,p.y-sea))
-	if lakes and model.inland_water(p.x,p.z):
+func _terrain_colour(p:Vector3,normal:Vector3) -> Color:
+	var grass:=Color("#a1ad7d").lerp(Color("#7c9069"),.5+.28*sin(p.x*.019)+.19*cos(p.z*.027))
+	grass=grass.lerp(Color("#657765"),smoothstep(12.,45.,p.y-sea)*.88)
+	var rock:=Color("#a9a796").lerp(Color("#828982"),.5+.30*sin(p.y*.09+p.x*.012))
+	grass=grass.lerp(rock,clampf((1.-normal.y-.10)*3.3+maxf(p.y-sea-33.,0.)*.038,0.,1.))
+	return Color("#c3b694").lerp(grass,smoothstep(.6,2.9,p.y-sea)).srgb_to_linear()
+
+func _water_facet(a:Vector3,b:Vector3,c:Vector3) -> void:
+	var center:=(a+b+c)/3.
+	if model.inland_water(center.x,center.z):
 		has_lakes=true
 		var lift:=Vector3.UP*.16
 		lakes.triangle(a+lift,b+lift,c+lift,Color.WHITE,Vector3.UP)
-	g.triangle(a,b,c,grass.lightened(.017*(1+sin(p.x*5+p.z))),Vector3.UP)
 
 func _patch(rect:Rect2i,step:int,stitch:=false) -> Node3D:
 	var tile:=Node3D.new()
@@ -89,12 +89,26 @@ func _patch(rect:Rect2i,step:int,stitch:=false) -> Node3D:
 			elif stitch and (x==rect.position.x or x==rect.end.x) and posmod(z,COARSE_STEP)!=0:
 				var dz:=posmod(z,COARSE_STEP)
 				h=lerpf(model.height_at(x,z-dz),model.height_at(x,z-dz+COARSE_STEP),dz/float(COARSE_STEP))
-			grid.append(Vector3(x,h,z))
+			var p:=Vector3(x,h,z)
+			grid.append(p)
+			# Use the same metre-scale slope on both sides of every LOD boundary.
+			var normal:=Vector3(model.height_at(x-5,z)-model.height_at(x+5,z),10.,
+				model.height_at(x,z-5)-model.height_at(x,z+5)).normalized()
+			var tangent:=(Vector3.RIGHT-normal*normal.x).normalized()
+			land.surface.set_normal(normal)
+			land.surface.set_tangent(Plane(tangent,-1.))
+			land.surface.set_color(_terrain_colour(p,normal))
+			land.surface.set_uv(Vector2(x,z))
+			land.surface.set_uv2(Vector2(Forms.Finish.MEADOW,0))
+			land.surface.add_vertex(p)
 	for j in rect.size.y/step:
 		for i in cols-1:
 			var k:=j*cols+i
-			_facet(land,grid[k],grid[k+1],grid[k+cols+1])
-			_facet(land,grid[k],grid[k+cols+1],grid[k+cols])
+			for vertex in [k,k+1,k+cols+1,k,k+cols+1,k+cols]:
+				land.surface.add_index(vertex)
+			if lakes:
+				_water_facet(grid[k],grid[k+1],grid[k+cols+1])
+				_water_facet(grid[k],grid[k+cols+1],grid[k+cols])
 	land.attach(tile)
 	if has_lakes:
 		var surface=lakes.attach(tile)

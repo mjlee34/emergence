@@ -5,14 +5,16 @@ namespace city {
 class City;
 struct DriveLeg {
   int edge;
-  double from, to, end_time;
+  double from, to, end_time, end_distance;
 };
 struct Vehicle;
 Vehicle drive_vehicle(const City &city, const std::vector<DriveLeg> &route,
-                      double elapsed, double speed, bool include_route = false);
+                      double elapsed, double speed, bool include_route = false,
+                      double *travelled = nullptr);
 struct VanPose {
   Point position;
-  double height, yaw;
+  double height, yaw, travelled;
+  int edge;
 };
 struct RoadCurb {
   int edge, sample;

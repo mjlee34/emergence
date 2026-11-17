@@ -1,8 +1,8 @@
 extends Node3D
 const Forms=preload("res://scripts/forms.gd")
-const TEAL:=Color("#397d79")
-const CREAM:=Color("#e7e2ce")
-const GLASS:=Color("#43595e")
+const TEAL:=Color("#386763")
+const CREAM:=Color("#cbc9c0")
+const GLASS:=Color("#36484e")
 const DARK:=Color("#303f42")
 const LED:=Color("#ffca65")
 var network:Dictionary
@@ -25,9 +25,12 @@ func _sign(parent:Node3D,caption:String,p:Vector3,yaw:float,pixel:float,colour:C
 
 func create(model) -> void:
 	network=model.bus_network()
-	var shell=Forms.new()
+	var shell=Forms.new(true)
+	shell.finish=Forms.Finish.ENAMEL
 	shell.box(Vector3(0,.85,0),Vector3(7.46,.82,2.22),TEAL)
+	shell.finish=Forms.Finish.WINDSCREEN
 	shell.box(Vector3(0,1.73,0),Vector3(7.36,1.03,2.19),GLASS)
+	shell.finish=Forms.Finish.ENAMEL
 	shell.box(Vector3(0,2.49,0),Vector3(7.43,.53,2.25),CREAM)
 	shell.box(Vector3(-.71,2.85,0),Vector3(2.33,.25,1.44),Color("#aaa99b"))
 	for side in [-1,1]:
@@ -36,14 +39,23 @@ func create(model) -> void:
 		shell.box(Vector3(0,1.31,side*1.113),Vector3(7.36,.10,.036),CREAM)
 		shell.box(Vector3(0,.68,side*1.114),Vector3(7.39,.10,.035),Color("#a9c7ad"))
 		for x in [-2.35,2.27]: shell.wheel(Vector3(x,.48,side*1.04),.47,side)
+		shell.finish=Forms.Finish.HEADLIGHT
 		shell.box(Vector3(3.735,.83,side*.79),Vector3(.04,.18,.41),Color("#fff2c9"))
+		shell.finish=Forms.Finish.TAIL_LIGHT
 		shell.box(Vector3(-3.735,.89,side*.94),Vector3(.04,.28,.12),Color("#b75744"))
+		shell.finish=Forms.Finish.ENAMEL
+		shell.beam(Vector3(3.40,2.35,side*1.08),Vector3(3.61,2.24,side*1.35),.045,DARK)
+		shell.box(Vector3(3.61,2.10,side*1.35),Vector3(.14,.31,.095),DARK)
+		for vent in 9:
+			shell.box(Vector3(-3.06-.055*vent,1.12,side*1.115),Vector3(.019,.28,.026),DARK)
 	shell.box(Vector3(3.722,2.45,0),Vector3(.045,.38,1.96),DARK)
 	shell.box(Vector3(-1.73,2.48,1.135),Vector3(2.79,.36,.045),DARK)
 	shell.box(Vector3(2.64,1.50,1.135),Vector3(1.23,1.93,.04),DARK)
 	var mesh=shell.mesh()
-	var leaf=Forms.new()
+	var leaf=Forms.new(true)
+	leaf.finish=Forms.Finish.ENAMEL
 	leaf.box(Vector3.ZERO,Vector3(.60,1.88,.052),TEAL)
+	leaf.finish=Forms.Finish.WINDSCREEN
 	leaf.box(Vector3(0,.25,.031),Vector3(.49,1.15,.025),GLASS)
 	var door_mesh=leaf.mesh()
 	for id in network.fleet:
@@ -99,12 +111,16 @@ func sync(model,town,fraction:float,orbit,selected:int) -> void:
 		current[id]=true
 		if not cars.has(id):
 			var car:=MeshInstance3D.new()
-			car.mesh=town.car_meshes[id%town.car_meshes.size()]
+			town.dress_car(car,id)
 			add_child(car)
 			cars[id]=car
 		var p:Vector4=service.cars[i]
-		cars[id].position=Vector3(p.x,p.y+.32,p.z)
-		cars[id].rotation.y=p.w
+		var stance:Vector3=service.stance[i]
+		var forward:=Vector3(cos(p.w),stance.x,-sin(p.w)).normalized()
+		var up:=Vector3(sin(p.w),stance.y,cos(p.w)).cross(forward).normalized()
+		var car:MeshInstance3D=cars[id]
+		car.transform=Transform3D(Basis(forward,up,forward.cross(up)),Vector3(p.x,p.y+.411,p.z))
+		car.set_instance_shader_parameter("wheel_travel",stance.z)
 	for id in cars.keys():
 		if not current.has(id):
 			cars[id].queue_free()

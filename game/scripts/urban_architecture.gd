@@ -10,12 +10,26 @@ static func row_house(lot:Dictionary) -> bool:
 static func masonry_house(lot:Dictionary) -> bool:
 	return lot.floors in [2,3] and (lot.use==1 or lot.style%4!=0)
 
+static func entrance(g,x:float,z:float,side:int,style:int) -> void:
+	var trim:=Color("#4d514e")
+	var leaf:Color=[Color("#515854"),Color("#635147"),Color("#484d51")][style%3]
+	g.finish=Forms.Finish.PLAIN
+	g.box(Vector3(x,1.12,z),Vector3(1.05,2.25,.18),trim)
+	var face:=z+side*.101
+	g.box(Vector3(x,1.10,face),Vector3(.89,2.10,.035),leaf)
+	g.finish=Forms.Finish.WINDSCREEN
+	g.box(Vector3(x,1.58,face+side*.025),Vector3(.65,.79,.019),Color("#45504f"))
+	g.finish=Forms.Finish.PLAIN
+	g.box(Vector3(x,.64,face+side*.03),Vector3(.67,.72,.03),leaf.lightened(.07))
+	g.box(Vector3(x,1.57,face+side*.04),Vector3(.033,.79,.026),trim)
+	g.box(Vector3(x+.32,1.04,face+side*.07),Vector3(.13,.036,.087),Color("#bbb6a8"))
+
 static func house_shell(g,lot:Dictionary,w:float,d:float,h:float) -> void:
 	g.finish=Forms.Finish.BRICK_FRONT if (lot.style/5)%3==0 else Forms.Finish.LIMESTONE_FRONT
 	g.box(Vector3.UP*h*.5,Vector3(w,h,d),Color("#e4e1dc"))
 	g.finish=Forms.Finish.PLAIN
 	var front:float=lot.front_sign*(d*.5+.04)
-	g.box(Vector3(0,1.12,front),Vector3(1.22,2.25,.14),Color("#41464a"))
+	entrance(g,0.,front,lot.front_sign,lot.style)
 	g.box(Vector3(0,2.29,front),Vector3(1.42,.12,.21),STONE)
 
 # Match the floor spacing in the four-storey facade maps.

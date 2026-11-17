@@ -2,6 +2,8 @@
 
 Choose a point on Earth and descend from the map to a new settlement on its measured terrain. Gimje Plain, the Loire Valley and the Sacramento Valley are bundled for offline play. [Watch the flight into Gimje](captures/settlement-flight.mp4)
 
+At street level, five passenger-car bodies share the roads with delivery vans and the town bus. Wheels turn with actual distance travelled, and daylight, rain and night lighting affect their glass, paint and lamps. Eight textured resident models walk between homes, workplaces and shops. [Watch a resident drive through town](captures/street-traffic.mp4) · [Compare the same street before and after](captures/street-before-after.jpg) · [Overcast skyline](captures/weathered-skyline.jpg)
+
 Press **W** to watch a town acquire its skyline. Once an occupied commercial corner attracts enough trips, it can grow above the houses. Nearby busy frontages can redevelop into mid-rise blocks. The camera keeps its bearing and eases back as roofs rise. Orbiting, panning or zooming returns control to the observer.
 
 Gimje seed 147 grew from 1,754 residents and a three-storey roofline to 27,505 residents and a 23-storey skyline. The time-lapse samples 28 dry afternoons during the first 53 simulation days. [Watch the skyline develop](captures/gimje-skyline-growth.mp4)

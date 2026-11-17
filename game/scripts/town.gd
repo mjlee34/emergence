@@ -24,6 +24,9 @@ var enclosed:Dictionary={}
 var paved:Dictionary={}
 var dense_blocks:Dictionary={}
 var last_paving_population:=0
+const CAR_BODIES = [preload("res://art/vehicles/sedan.glb"), preload("res://art/vehicles/hatchback.glb"), preload("res://art/vehicles/estate.glb"), preload("res://art/vehicles/compact.glb"), preload("res://art/vehicles/minivan.glb")]
+const CAR_PAINT = [Color("#c8c9c4"), Color("#424c54"), Color("#234b62"), Color("#7c3736"), Color("#b3ab9a"), Color("#4d5850"), Color("#deddd6"), Color("#303237")]
+var car_materials:Array[ShaderMaterial]=[]
 var car_meshes: Array[Mesh]=[]
 var construction:Dictionary={}
 var roadworks:Dictionary={}
@@ -39,35 +42,18 @@ func create(sim, landscape) -> void:
 	model=sim
 	land=landscape
 	add_child(street_lights)
-	for i in range(6):
-		var g=Forms.new()
-		var tint:=Color(["#813e36","#a9aba7","#d4d0c6","#50616d","#343c43","#8b8d7c"][i])
-		var hatch:=i%3==0
-		# Cross-sections give the bonnet, windscreen and rear hatch different slopes.
-		var stations:=[[ -2.10,.82,.82],[-1.90,.98,.89],[ -1.32,1.02,.90],[.88,1.01,.89],[1.88,.90,.84],[2.06,.73,.75]]
-		for n in range(stations.size()-1):
-			var a:Array=stations[n]
-			var b:Array=stations[n+1]
-			g.quad(Vector3(a[0],a[1],-a[2]),Vector3(a[0],a[1],a[2]),Vector3(b[0],b[1],b[2]),Vector3(b[0],b[1],-b[2]),tint,Vector3.UP)
-			for z in [-1,1]:
-				g.quad(Vector3(a[0],.38,z*a[2]*.93),Vector3(a[0],a[1],z*a[2]),Vector3(b[0],b[1],z*b[2]),Vector3(b[0],.38,z*b[2]*.93),tint,Vector3.BACK*z)
-		for end in [stations[0],stations[-1]]:
-			g.box(Vector3(end[0],(.36+end[1])*.5,0),Vector3(.06,end[1]-.36,end[2]*2.),tint)
-		var tail:float=-1.74 if hatch else -1.38
-		var roof_tail:float=-1.32 if hatch else -.85
-		var glass:=Color("#455158")
-		for z in [-1,1]:
-			g.quad(Vector3(tail,1.01,z*.84),Vector3(roof_tail,1.52,z*.69),Vector3(.25,1.52,z*.67),Vector3(.94,1.02,z*.83),glass,Vector3.BACK*z)
-			g.quad(Vector3(-.48,1.015,z*.845),Vector3(-.49,1.521,z*.695),Vector3(-.415,1.521,z*.695),Vector3(-.395,1.015,z*.845),Color("#30383a"),Vector3.BACK*z)
-			for x in [-1.30,1.29]: g.wheel(Vector3(x,.37,z*.84),.34,z)
-			g.box(Vector3(2.045,.739,z*.54),Vector3(.09,.13,.36),Color("#d9d9cd"))
-			g.box(Vector3(-2.10,.742,z*.58),Vector3(.072,.14,.36),Color("#94463e"))
-			g.box(Vector3(.60,1.102,z*.93),Vector3(.23,.12,.20),tint)
-		for end in [[tail,roof_tail,-1.],[.94,.25,1.]]:
-			g.quad(Vector3(end[0],1.01,-.836),Vector3(end[0],1.01,.836),Vector3(end[1],1.52,.69),Vector3(end[1],1.52,-.69),glass,Vector3(end[2],.6,0))
-		g.box(Vector3((roof_tail+.25)*.5,1.532,0),Vector3(.25-roof_tail,.067,1.37),tint)
-		g.box(Vector3(2.094,.53,0),Vector3(.026,.16,.60),Color("#515557"))
-		car_meshes.append(g.mesh())
+	for scene:PackedScene in CAR_BODIES:
+		var material:=ShaderMaterial.new()
+		material.shader=preload("res://scripts/vehicle_paint.gdshader")
+		material.set_shader_parameter("atlas",load(scene.resource_path.get_basename()+".png"))
+		car_materials.append(material)
+		car_meshes.append(Forms.imported_mesh(scene))
+
+func dress_car(car:MeshInstance3D,id:int) -> void:
+	var body:=id%car_meshes.size()
+	car.mesh=car_meshes[body]
+	car.material_override=car_materials[body]
+	car.set_instance_shader_parameter("paint",CAR_PAINT[(id/5+body*3)%CAR_PAINT.size()])
 
 func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 	var time:float=state.tick+fraction
@@ -231,11 +217,13 @@ func _terrace(lot:Dictionary,w:float,d:float,nearby:bool) -> MeshInstance3D:
 		g.box(Vector3(x,height*.5,0),Vector3(bay-.03,height,d),tint)
 		g.finish=Forms.Finish.PLAIN
 		var door_x:=x-bay*.24
-		g.box(Vector3(door_x,1.1,front),Vector3(1.03,2.2,.17),Color("#454c4c"))
 		if nearby:
+			Architecture.entrance(g,door_x,front,lot.front_sign,lot.style+i)
 			g.box(Vector3(door_x,2.26,front),Vector3(1.36,.14,.32),Color("#bcb6aa"))
 			g.finish=Forms.Finish.WALK
 			g.box(Vector3(door_x,.18,front+lot.front_sign*.54),Vector3(1.46,.32,1.13),Color("#aca79a"))
+		else:
+			g.box(Vector3(door_x,1.1,front),Vector3(1.03,2.2,.17),Color("#454c4c"))
 		g.finish=Forms.Finish.BRICK
 		var stack:=Vector3(x+bay*.35,height+1.65,d*.10)
 		g.box(stack,Vector3(.79,1.40,.55),Color("#927e70"))
@@ -622,7 +610,7 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 			site.add_child(sapling)
 		if lot.style%3==0:
 			var parked:=MeshInstance3D.new()
-			parked.mesh=car_meshes[lot.style%car_meshes.size()]
+			dress_car(parked,lot.style/3)
 			parked.position=Vector3(w*.5+1.05,.24,0)
 			parked.rotation.y=PI*.5
 			site.add_child(parked)

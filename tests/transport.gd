@@ -25,6 +25,12 @@ func run() -> void:
 		var remote:Dictionary=world.model.mobility_near(0.,Vector2(1400,950),1.,driver)
 		check(remote.drivers.size()==1 and remote.drivers[0]==driver,"Camera culling lost the tracked driver")
 		check(remote.waiting==full.waiting and remote.buses==full.buses,"Camera culling changed transit passenger totals")
+		var index:int=full.drivers.find(driver)
+		check(remote.stance.size()==1 and remote.stance[0].is_equal_approx(full.stance[index]),"Visible wheel travel depends on the camera")
+		var later:Dictionary=world.model.mobility_near(.25,Vector2(1400,950),1.,driver)
+		check(later.stance.size()==1 and later.stance[0].z>remote.stance[0].z,"Driving wheels did not advance with the trip")
+		var car:MeshInstance3D=world.transit.cars[driver]
+		check(car.mesh.get_surface_count()==1 and car.basis.is_conformal(),"Passenger car mesh or road alignment is invalid")
 		world._watch(driver)
 		world._process(0.)
 		var r: Dictionary = world.model.resident(driver,0.)

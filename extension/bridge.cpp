@@ -517,7 +517,12 @@ public:
     first_waiter.resize(net.stops().size());
     first_waiter.fill(-1);
     PackedVector4Array cars;
-    struct Car { double distance; int id; Vector4 pose; };
+    struct Car {
+      double distance;
+      int id;
+      city::VanPose pose;
+    };
+    PackedVector3Array stance;
     std::vector<Car> visible;
     index_travelers();
     for (int id : travel_hours[(int(minute) / 60) % 24]) {
@@ -540,8 +545,7 @@ public:
         double dx = car.position.x - focus.x, dz = car.position.z - focus.y;
         double distance_sq = dx * dx + dz * dz;
         if (radius < 0 || id == selected || distance_sq <= radius * radius)
-          visible.push_back({id == selected ? -1. : distance_sq, id,
-                             Vector4(car.position.x, car.height, car.position.z, car.yaw)});
+          visible.push_back({id == selected ? -1. : distance_sq, id, car});
       }
     }
     constexpr size_t visible_limit = 240;
@@ -554,7 +558,19 @@ public:
     }
     for (const auto &car : visible) {
       drivers.push_back(car.id);
-      cars.push_back(car.pose);
+      const auto &p = car.pose;
+      const auto &road = state.roads()[p.edge];
+      const double cx = std::cos(p.yaw), sz = std::sin(p.yaw);
+      auto grade = [&](double x, double z, double span) {
+        return (state.street_height(
+                    road, {p.position.x + x * span, p.position.z + z * span}) -
+                state.street_height(
+                    road, {p.position.x - x * span, p.position.z - z * span})) /
+               (2 * span);
+      };
+      cars.push_back(Vector4(p.position.x, p.height, p.position.z, p.yaw));
+      stance.push_back(
+          Vector3(grade(cx, -sz, 1.32), grade(sz, cx, .76), p.travelled));
     }
     Array buses;
     for (int id = 0; !net.stops().empty() && id < city::Transit::fleet; ++id) {
@@ -579,6 +595,7 @@ public:
     }
     data["buses"] = buses;
     data["cars"] = cars;
+    data["stance"] = stance;
     data["drivers"] = drivers;
     data["waiting"] = waiting;
     data["first_waiter"] = first_waiter;

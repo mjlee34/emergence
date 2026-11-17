@@ -23,8 +23,13 @@ void fragment(){
 	float t=smoothstep(.15,.85,fract(tier));
 	ALPHA=mix(a.a,b.a,t);
 	ALPHA_SCISSOR_THRESHOLD=.34;
-	ALBEDO=mix(a.rgb,b.rgb,t)*shade*1.18;
-	NORMAL=normalize(mat3(VIEW_MATRIX)*vec3(0.,1.,0.)+VIEW*.18);
+	vec3 leaves=mix(a.rgb,b.rgb,t)*shade;
+	ALBEDO=mix(leaves,vec3(dot(leaves,vec3(.21,.72,.07))),.09)*1.10;
+	// Model the volume behind the photographic cutout from the viewing angle.
+	vec2 crown_xy=vec2((UV.x-.5)*1.55,(.43-UV.y)*1.3);
+	vec3 crown_normal=vec3(crown_xy,sqrt(max(.12,1.-dot(crown_xy,crown_xy))));
+	NORMAL=normalize(crown_normal+mat3(VIEW_MATRIX)*vec3(0.,1.15,0.));
+	BACKLIGHT=ALBEDO*.16;
 	ROUGHNESS=.96;
 	SPECULAR=.12;
 }

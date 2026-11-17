@@ -1,6 +1,6 @@
 # Art sources
 
-EMERGENCE generates its buildings, vehicles, street geometry and residents in Godot. The following Poly Haven assets provide the measured surfaces and vegetation. The files needed at runtime ship with the project. [Poly Haven asset license (CC0)](https://polyhaven.com/license)
+EMERGENCE generates its buildings and street geometry in Godot. The following Poly Haven assets provide the measured surfaces, vegetation and skies. The files needed at runtime ship with the project. [Poly Haven asset license (CC0)](https://polyhaven.com/license)
 
 | Source asset | Artist | In-game use |
 | --- | --- | --- |
@@ -11,8 +11,20 @@ EMERGENCE generates its buildings, vehicles, street geometry and residents in Go
 | [Grass Ground](https://polyhaven.com/a/grass_ground) | Charlotte Baglioni | Meadows, medians and gardens |
 | [Fir Tree 01](https://polyhaven.com/a/fir_tree_01) | Rob Tuytel and Rico Cilliers | Conifer canopy and trunk |
 | [Tree Small 02](https://polyhaven.com/a/tree_small_02) | Rico Cilliers | Deciduous trees and street planting |
+| [Kloofendal 48d Partly Cloudy (Pure Sky)](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky) | Greg Zaal and Jarod Guest | Daylight sky and reflections |
+| [Kloofendal Overcast (Pure Sky)](https://polyhaven.com/a/kloofendal_overcast_puresky) | Greg Zaal | Overcast sky and reflections |
+
+The two sky hemispheres store logarithmically encoded radiance. The sky shader decodes and blends them with the simulated weather and solar position.
 
 The material images were colour-graded. The companion maps store tangent-space normal X/Y in red/green and roughness in blue. The two foliage atlases were rendered from the original meshes at three elevations and two azimuths, then instanced across the valley.
+
+## Passenger vehicles
+
+The sedan, hatchback, estate, compact and minivan adapt Comrade1280’s *Generic passenger car pack* under CC BY 4.0. The conversion combines each vehicle into one surface, repacks the optical and wheel textures, separates body paint from trim, and locates its axles for animation. The game adds individual paint colours and weather-responsive shading. [Original models](https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) · [Bundled attribution](game/art/vehicles/CREDITS.txt)
+
+## Residents
+
+The eight street characters adapt the adult avatars from Microsoft Rocketbox. Each model is posed, simplified to roughly 2,260 triangles, and paired with a reduced colour atlas. Limb weights drive the instanced walking and seated poses in Godot. [Microsoft Rocketbox](https://github.com/microsoft/Microsoft-Rocketbox) · [Bundled MIT license](game/art/residents/LICENSE.txt)
 
 ## Building facades
 

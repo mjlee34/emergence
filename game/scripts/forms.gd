@@ -1,7 +1,7 @@
 extends RefCounted
 ## Procedural geometry with metre-scaled surface coordinates. Winding is selected from the requested outward direction.
 var surface := SurfaceTool.new()
-enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP, LIMESTONE_FRONT, BRICK_FRONT, CURTAIN_WALL, BRONZE_FRONT }
+enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP, LIMESTONE_FRONT, BRICK_FRONT, CURTAIN_WALL, BRONZE_FRONT, ENAMEL, WINDSCREEN, HEADLIGHT, TAIL_LIGHT }
 var finish:=Finish.PLAIN
 var construction_lag:=0.0
 var facade_uv:=Vector3.ZERO
@@ -136,3 +136,11 @@ func attach(parent: Node3D) -> MeshInstance3D:
 	node.mesh = mesh()
 	parent.add_child(node)
 	return node
+
+## A shared mesh without keeping a glTF scene tree for each vehicle or resident.
+static func imported_mesh(scene:PackedScene) -> Mesh:
+	var root:=scene.instantiate()
+	var body:MeshInstance3D=root if root is MeshInstance3D else root.find_children("*","MeshInstance3D",true,false)[0]
+	var result:=body.mesh
+	root.free()
+	return result

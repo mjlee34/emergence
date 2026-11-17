@@ -65,7 +65,7 @@ func home() -> void:
 
 func zoom_by(factor: float) -> void:
 	following=false
-	extent=clampf(extent*factor,16,region_half_size.length()*2.)
+	extent=clampf(extent*factor,6.5,region_half_size.length()*2.)
 	update_view()
 
 func _unhandled_input(event: InputEvent) -> void:

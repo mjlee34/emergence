@@ -19,10 +19,13 @@ func _ready() -> void:
 	sky.process_mode=Sky.PROCESS_MODE_REALTIME
 	sky.radiance_size=Sky.RADIANCE_SIZE_256
 	sky_material.shader=preload("res://scripts/weather_sky.gdshader")
+	sky_material.set_shader_parameter("cumulus",preload("res://art/sky_cumulus.jpg"))
+	sky_material.set_shader_parameter("stratus",preload("res://art/sky_stratus.jpg"))
 	sky.sky_material=sky_material
 	atmosphere.sky=sky
 	atmosphere.background_mode=Environment.BG_SKY
-	atmosphere.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
+	atmosphere.ambient_light_source=Environment.AMBIENT_SOURCE_SKY
+	atmosphere.ambient_light_sky_contribution=.57
 	atmosphere.reflected_light_source=Environment.REFLECTION_SOURCE_SKY
 	atmosphere.tonemap_mode=Environment.TONE_MAPPER_ACES
 	atmosphere.fog_enabled=true
@@ -39,7 +42,7 @@ func _ready() -> void:
 	sun.directional_shadow_mode=DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun.directional_shadow_blend_splits=true
 	sun.shadow_bias=.035
-	sun.shadow_normal_bias=.85
+	sun.shadow_normal_bias=.55
 	sun.light_angular_distance=.35
 	add_child(sun)
 	moon.light_color=Color("#a5bdea")
@@ -91,13 +94,15 @@ func sync(w:Dictionary,tick:float,orbit:Camera3D) -> void:
 	else: condition="Clear skies"
 	sun.rotation=Vector3(-asin(clampf(direction.y,-1.,1.)),atan2(direction.x,direction.z),0.)
 	moon.rotation=Vector3(asin(clampf(direction.y,-1.,1.)),atan2(-direction.x,-direction.z),0.)
-	sun.light_energy=smoothstep(-.035,.18,direction.y)*(1.10-.88*cover)
+	sun.light_energy=smoothstep(-.035,.18,direction.y)*(1.42-1.12*cover)
 	sun.light_color=Color("#ffad78").lerp(Color("#fff2dc"),smoothstep(.025,.34,direction.y))
 	sun.directional_shadow_max_distance=clampf(orbit.size*2.8,95.,1700.)
 	sun.shadow_opacity=1.-cover*.62
+	atmosphere.ssr_enabled=orbit.size<20.
+	atmosphere.ssr_max_steps=24
 	moon.light_energy=.32*(1.-daylight)*(1.-cover*.64)
 	atmosphere.ambient_light_color=Color("#a2b4cf").lerp(Color("#dae4ed").lerp(Color("#acbdca"),cover),daylight)
-	atmosphere.ambient_light_energy=lerpf(.40,.55+cover*.06,daylight)
+	atmosphere.ambient_light_energy=lerpf(.50,.73+cover*.12,daylight)
 	atmosphere.background_energy_multiplier=lerpf(.43,1.,daylight)
 	var mist:=Color("#a1b5c5").lerp(Color("#99a7b3"),cover)
 	mist=mist.lerp(Color("#efbd9d"),twilight*.78*(1.-cover))

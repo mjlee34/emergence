@@ -38,6 +38,9 @@ void fragment(){
 	if(kind==1){
 		vec2 at=UV/6.7;
 		base=texture(road,at).rgb*(.78+.48*COLOR.r);
+		// Coarse aggregate and weathered patches vary at different scales.
+		float weathering=texture(road,UV*.032+vec2(.31,.67)).g;
+		base*=.86+clamp(weathering*1.8,0.,.26);
 		detail=texture(road_surface,at).rgb;
 	}else if(kind==2){
 		vec2 at=UV/2.6;
@@ -95,7 +98,11 @@ void fragment(){
 			float floor_line=smoothstep(.012,.042,edge.y);
 			float sky=mix(.74,1.12,clamp(local.y/95.,0.,1.));
 			vec3 glass=mix(vec3(.10,.17,.20),vec3(.24,.33,.37),vision)*sky;
-			glass*=.94+.12*hash(floor(at*4.)+building_key);
+			float tenant=hash(floor(at*4.)+building_key);
+			float resolved=1.-smoothstep(.14,.6,max(fwidth(at.x),fwidth(at.y))*4.);
+			glass*=mix(1.,.78+.43*tenant,resolved);
+			float blind=step(.77,tenant)*smoothstep(.28,.34,bay.y)*vision*resolved;
+			glass=mix(glass,vec3(.32,.29,.24),blind*.45);
 			vec3 cladding=mix(vec3(.32,.35,.35),glass,mullion*floor_line);
 			base=mix(cladding*COLOR.rgb,wall*COLOR.rgb,.20);
 		}
@@ -105,6 +112,18 @@ void fragment(){
 		float occupied=step(.5,occupancy)*step(.94-min(.49,occupancy*.018),hash(floor(at*4.)+building_key));
 		float curtain=clamp(dot(wall,vec3(.25,.55,.2))*4.+.10,.18,1.);
 		EMISSION=vec3(.80,.56,.31)*occupied*night*pane*curtain*.95;
+	}else if(kind==15){
+		METALLIC=.28;
+		detail.b=.31-wetness*.12;
+		spec=.72;
+	}else if(kind==16){
+		METALLIC=.26;
+		detail.b=.13;
+		spec=.84;
+	}else if(kind==17 || kind==18){
+		detail.b=.17;
+		spec=.75;
+		EMISSION=(kind==17 ? vec3(1.,.91,.74) : vec3(.70,.025,.01))*night*2.8;
 	}else if(kind==10){
 		EMISSION=vec3(1.,.78,.49)*night*2.8;
 	}else if(kind==7){

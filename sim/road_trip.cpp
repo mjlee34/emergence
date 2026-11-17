@@ -17,12 +17,13 @@ std::vector<DriveLeg> drive_route(const City &c, RoadCurb origin,
   int first = origin.edge, last = target.edge;
   const auto &a = c.roads()[first], &b = c.roads()[last];
   double start = a.lengths[origin.sample], end = b.lengths[target.sample];
-  double time = 0;
+  double time = 0, distance = 0;
   auto leg = [&](int edge, double from, double to) {
     if (std::abs(to - from) < .001)
       return;
     time += std::abs(to - from) / (speed * speed_factor(c.roads()[edge].type));
-    legs.push_back({edge, from, to, time});
+    distance += std::abs(to - from);
+    legs.push_back({edge, from, to, time, distance});
   };
   auto curb_forward = [&](const Road &r, RoadCurb curb) {
     int k = curb.sample;
@@ -52,11 +53,12 @@ std::vector<DriveLeg> drive_route(const City &c, RoadCurb origin,
   }
   // Building entrances can occupy the same point along a street.
   if (legs.empty())
-    legs.push_back({first, start, start, 0});
+    legs.push_back({first, start, start, 0, 0});
   return legs;
 }
 Vehicle drive_vehicle(const City &c, const std::vector<DriveLeg> &legs,
-                      double elapsed, double speed, bool include_route) {
+                      double elapsed, double speed, bool include_route,
+                      double *travelled) {
   auto it = std::lower_bound(
       legs.begin(), legs.end(), elapsed,
       [](const DriveLeg &leg, double t) { return leg.end_time < t; });
@@ -70,6 +72,8 @@ Vehicle drive_vehicle(const City &c, const std::vector<DriveLeg> &legs,
           ? std::clamp((elapsed - before) / (it->end_time - before), 0., 1.)
           : 0.;
   double at = std::lerp(it->from, it->to, progress);
+  if (travelled)
+    *travelled = it->end_distance - std::abs(it->to - at);
   Vehicle vehicle{it->edge, forward ? r.a : r.b,
                   0,        forward ? at : r.lengths.back() - at,
                   speed,    {}};
@@ -83,7 +87,8 @@ Vehicle drive_vehicle(const City &c, const std::vector<DriveLeg> &legs,
 }
 VanPose drive_pose(const City &c, const std::vector<DriveLeg> &legs,
                    double elapsed, double speed) {
-  auto vehicle = drive_vehicle(c, legs, elapsed, speed);
+  double travelled;
+  auto vehicle = drive_vehicle(c, legs, elapsed, speed, false, &travelled);
   const auto &r = c.roads()[vehicle.edge];
   double yaw;
   auto pos = c.vehicle_position(vehicle, yaw);
@@ -93,6 +98,6 @@ VanPose drive_pose(const City &c, const std::vector<DriveLeg> &legs,
   double shift = berth * (road_width(r.type) * .5 - .97 - lane);
   pos.x += std::sin(yaw) * shift;
   pos.z += std::cos(yaw) * shift;
-  return {pos, c.street_height(r, pos), yaw};
+  return {pos, c.street_height(r, pos), yaw, travelled, vehicle.edge};
 }
 } // namespace city

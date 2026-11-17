@@ -1,9 +1,14 @@
 extends Node3D
 const BuildingWorks=preload("res://scripts/building_works.gd")
 const Forms=preload("res://scripts/forms.gd")
-const COATS=["#935d50","#546877","#ac9361","#596c59","#b6afa0","#6b535e","#597478","#886c57"]
+const RESIDENTS = [
+	preload("res://art/residents/Male_Adult_01.glb"), preload("res://art/residents/Female_Adult_03.glb"),
+	preload("res://art/residents/Male_Adult_04.glb"), preload("res://art/residents/Female_Adult_02.glb"),
+	preload("res://art/residents/Male_Adult_03.glb"), preload("res://art/residents/Female_Adult_01.glb"),
+	preload("res://art/residents/Male_Adult_05.glb"), preload("res://art/residents/Female_Adult_04.glb")
+]
 var groups:Array[MultiMesh]=[]
-var paint:=ShaderMaterial.new()
+var fabrics:Array[ShaderMaterial]=[]
 var ids:=PackedInt32Array()
 var poses:=PackedVector4Array()
 var modes:=PackedInt32Array()
@@ -13,29 +18,15 @@ var parcels:=MultiMesh.new()
 var bags:=MultiMesh.new()
 
 func _ready() -> void:
-	paint.shader=preload("res://scripts/walkers.gdshader")
-	for i in COATS.size():
-		var g=Forms.new()
-		var coat:=Color(COATS[i])
-		var skin:=Color(["#e3b892","#b88564","#805b49","#c99770"][i%4])
-		var trousers:=Color(["#394d59","#514d49","#485775"][i%3])
-		for side in [-1,1]:
-			var leg:=Vector3(side*.105,0,0)
-			g.profile(leg,[Vector3(.068,.10,.08),Vector3(.077,.44,.083),Vector3(.11,.80,.12),Vector3(.11,.91,.13)],trousers,8)
-			g.profile(leg+Vector3(0,0,.046),[Vector3(.083,.025,.145),Vector3(.087,.088,.15),Vector3(.065,.16,.093)],Color("#46413c"),8)
-			var arm:=Vector3(side*.235,0,0)
-			g.profile(arm,[Vector3(.048,.87,.064),Vector3(.068,1.09,.078),Vector3(.086,1.36,.093),Vector3(.043,1.43,.07)],coat,8)
-			g.profile(arm,[Vector3(.036,.77,.04),Vector3(.053,.815,.056),Vector3(.047,.89,.05)],skin,8)
-		g.profile(Vector3.ZERO,[Vector3(.190,.78,.136),Vector3(.204,.91,.146),Vector3(.164,1.06,.127),Vector3(.22,1.31,.15),Vector3(.196,1.41,.113),Vector3(.074,1.46,.085)],coat)
-		g.profile(Vector3.ZERO,[Vector3(.06,1.41,.065),Vector3(.06,1.50,.066),Vector3(.086,1.515,.087),Vector3(.112,1.61,.103),Vector3(.118,1.71,.11),Vector3(.081,1.765,.085)],skin)
-		g.profile(Vector3(0,0,-.012),[Vector3(.117,1.65,.106),Vector3(.12,1.71,.11),Vector3(.096,1.757,.093),Vector3(.047,1.779,.05)],Color("#53453a") if i%3 else Color("#37322d"))
-		if i%3==1:
-			g.profile(Vector3.ZERO,[Vector3(.132,1.71,.14),Vector3(.113,1.742,.115),Vector3(.073,1.785,.083)],coat)
-		if i%3==0: g.profile(Vector3(0,0,-.145),[Vector3(.104,.97,.072),Vector3(.14,1.05,.089),Vector3(.13,1.30,.08),Vector3(.088,1.34,.06)],Color("#695c4a"))
+	for scene:PackedScene in RESIDENTS:
+		var paint:=ShaderMaterial.new()
+		paint.shader=preload("res://scripts/walkers.gdshader")
+		paint.set_shader_parameter("clothing", load(scene.resource_path.get_basename()+".png"))
+		fabrics.append(paint)
 		var batch:=MultiMesh.new()
 		batch.transform_format=MultiMesh.TRANSFORM_3D
 		batch.use_custom_data=true
-		batch.mesh=g.mesh()
+		batch.mesh=Forms.imported_mesh(scene)
 		var node:=MultiMeshInstance3D.new()
 		node.multimesh=batch
 		node.material_override=paint
@@ -147,7 +138,7 @@ func sync(model,orbit,state:Dictionary,fraction:float,selected:int,rain:float) -
 		if modes[i]==1:
 			parcels.set_instance_transform(load_index,transform3.translated_local(Vector3(0,1.04,.29)))
 			load_index+=1
-	paint.set_shader_parameter("simulation_tick",fmod(state.tick+fraction,TAU*100/1.75))
+	for fabric in fabrics: fabric.set_shader_parameter("simulation_tick",fmod(state.tick+fraction,TAU*100/1.75))
 	marker.visible=false
 	marker.scale=Vector3.ONE
 	var index:=ids.find(selected)
