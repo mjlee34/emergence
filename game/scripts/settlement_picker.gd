@@ -13,6 +13,7 @@ var atlas=AtlasMap.new()
 var card:=PanelContainer.new()
 var title:Label
 var location:=LineEdit.new()
+var seed_entry:=LineEdit.new()
 var coordinates:Label
 var status:Label
 var begin:Button
@@ -104,6 +105,10 @@ func _ready() -> void:
 	column.add_child(spots)
 	for data in SITES:
 		_button(spots,data[0],func(): select_point(data[1],data[2],data[0],true))
+	seed_entry.placeholder_text="도시 시드 · 비워 두면 매번 새 도시"
+	seed_entry.max_length=10
+	seed_entry.tooltip_text="같은 좌표와 시드를 입력하면 같은 도시가 자랍니다."
+	column.add_child(seed_entry)
 	var actions:=HBoxContainer.new()
 	column.add_child(actions)
 	begin=_button(actions,"새 도시 시작" if returnable else "이곳에 정착",_begin,true)
@@ -228,6 +233,12 @@ func _google() -> void:
 
 func _begin() -> void:
 	if busy or not chosen: return
+	var value:=seed_entry.text.strip_edges()
+	if value!="" and (not value.is_valid_int() or int(value)<0 or int(value)>2147483647):
+		status.text="시드는 0부터 2147483647 사이의 정수로 입력하세요."
+		google.tell({"action":"retry","message":status.text})
+		return
+	var city_seed:=int(value) if value!="" else Crypto.new().generate_random_bytes(4).decode_u32(0) & 0x7fffffff
 	_stop_focus()
 	busy=true
 	begin.disabled=true
@@ -236,7 +247,7 @@ func _begin() -> void:
 	status.text="정착지 주변의 표고와 호수를 확인하고 있습니다…"
 	var data:Dictionary=await geo.survey(lat,lon)
 	var model:=CityModel.new()
-	if data.is_empty() or not model.settle_at(hash("%.5f,%.5f"%[lat,lon])&0x7fffffff,lat,lon,data.heights,data.lakes):
+	if data.is_empty() or not model.settle_at(city_seed,lat,lon,data.heights,data.lakes):
 		status.text="지형을 불러오지 못했습니다. 연결을 확인하고 다시 시도하세요." if data.is_empty() else "물이나 급경사가 초기 정착지와 겹칩니다. 가까운 평지를 선택하세요."
 		google.tell({"action":"retry","message":status.text})
 		busy=false

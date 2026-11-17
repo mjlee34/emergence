@@ -52,13 +52,18 @@ func run() -> void:
 		centres.append(model.height_at(0,0)-model.sea_level())
 	check(centres.size()==3 and absf(centres[0]-centres[1])>10,"Sites share the same elevation")
 	picker.select_point(Picker.SITES[0][1],Picker.SITES[0][2],Picker.SITES[0][0])
+	picker.seed_entry.text="invalid"
 	picker.begin.pressed.emit()
-	for _i in 300:
+	check(not picker.busy and picker.status.text.contains("2147483647"),"Invalid seed accepted")
+	picker.seed_entry.text="42"
+	picker.begin.pressed.emit()
+	var deadline:=Time.get_ticks_msec()+20000
+	while Time.get_ticks_msec()<deadline:
 		await process_frame
 		if app.world!=null and not app.flying: break
 	check(app.world!=null and not app.flying,"Map to 3D handoff failed")
 	if app.world!=null and not app.flying:
-		check(app.world.model.is_geographic() and app.world.state.population>0 and app.world.hud.visible,"Imported world did not start")
+		check(app.world.model.is_geographic() and app.world.state.seed==42 and app.world.state.population>0 and app.world.hud.visible,"Imported world did not start")
 		var previous=app.world
 		app.world.hud.world_button.pressed.emit()
 		check(is_instance_valid(app.picker) and previous.process_mode==Node.PROCESS_MODE_DISABLED,"Return to map failed")

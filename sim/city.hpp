@@ -30,7 +30,7 @@ struct Road {
   std::array<Point, 9> path;
   std::array<double, 9> lengths;
 };
-double road_height(const Road &road, Point p);
+double road_height(const Road &road, Point p, const Site &site = {});
 enum class Use { Housing, Shops, Works };
 struct Building {
   Point pos;
@@ -89,6 +89,9 @@ public:
 private:
   Site site_;
   uint32_t seed_, random_;
+  double grid_angle_, grid_phase_, block_width_;
+  Point workshop_site_;
+  Point street_point(double column, double row) const;
   int tick_ = 0, population_ = 0, capacity_ = 0, vacant_ticks_ = 0;
   std::vector<Junction> nodes_;
   std::vector<Road> roads_;
@@ -98,6 +101,12 @@ private:
   bool access_changed_ = false;
   int surveyed_population_ = 0;
   void plan_facilities();
+  struct TravelDemand {
+    double visits = 0, east_west = 0, north_south = 0;
+  };
+  std::vector<TravelDemand> travel_demand_;
+  void survey_trips();
+  double frontage_visits(int edge) const;
   std::map<std::pair<int, int>, int> node_index_;
   std::vector<int> renewals_;
   struct Completion {
@@ -114,7 +123,7 @@ private:
   uint32_t draw();
   int find_node(int c, int r) const;
   bool grow();
-  int add_road(int a, int c, int r);
+  int add_road(int a, int c, int r, RoadClass type, bool bridge = false);
   bool develop(int edge, bool initial);
   void record(std::string message);
 };

@@ -9,23 +9,6 @@
 namespace city {
 namespace {
 constexpr int build_time = construction_ticks;
-struct District {
-  int col, row, threshold;
-};
-constexpr std::array<District, 6> districts{{{0, 0, 0},
-                                             {-5, 2, 2200},
-                                             {6, 0, 3500},
-                                             {0, -4, 5200},
-                                             {-3, 5, 7600},
-                                             {7, 4, 10500}}};
-RoadClass hierarchy(int x, int y, int c, int r) {
-  if (y == 0 && r == 0)
-    return RoadClass::Arterial;
-  if ((c == x && (c == 0 || c == -5 || c == 6)) ||
-      (r == y && (r == 2 || r == -4 || r == 5)))
-    return RoadClass::Collector;
-  return RoadClass::Local;
-}
 } // namespace
 double road_width(RoadClass type) {
   constexpr double widths[] = {4.2, 7.2, 14.2};
@@ -35,43 +18,66 @@ double speed_factor(RoadClass type) {
   constexpr double speeds[] = {0.83, 1.35, 2.05};
   return speeds[static_cast<int>(type)];
 }
-double road_height(const Road &road, Point p) {
-  if (!road.bridge)
-    return ground(p);
-  auto a = road.path.front(), b = road.path.back();
-  double dx = b.x - a.x, dz = b.z - a.z;
-  double t = std::clamp(
-      ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz), 0., 1.);
-  return std::lerp(ground(a), ground(b), t) + 2.3 * std::sin(3.14159265 * t);
-}
 uint32_t City::draw() {
   random_ = random_ * 1664525u + 1013904223u;
   return random_;
 }
-double City::street_height(const Road &road, Point p) const {
-  return site_.geographic() ? height(p) : road_height(road, p);
+Point City::street_point(double column, double row) const {
+  const double x = block_width_ * column +
+                   8. * std::sin(.53 * column + .89 * row + grid_phase_);
+  const double z =
+      36. * row + 9. * std::sin(.87 * column - .41 * row - grid_phase_);
+  return {-40. + x * std::cos(grid_angle_) - z * std::sin(grid_angle_),
+          4. + x * std::sin(grid_angle_) + z * std::cos(grid_angle_)};
 }
-City::City(uint32_t seed, Site site) : site_(std::move(site)), seed_(seed), random_(seed) {
+double road_height(const Road &road, Point p, const Site &site) {
+  if (!road.bridge)
+    return site.height(p);
+  auto a = road.path.front(), b = road.path.back();
+  const double dx = b.x - a.x, dz = b.z - a.z;
+  double t = std::clamp(
+      ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz), 0., 1.);
+  return std::lerp(site.height(a), site.height(b), t) + 2.3 * std::sin(3.14159265 * t);
+}
+double City::street_height(const Road &road, Point p) const {
+  return road_height(road, p, site_);
+}
+City::City(uint32_t seed, Site site)
+    : site_(std::move(site)), seed_(seed), random_(seed) {
+  auto unit = [&] { return double(draw() >> 8) / 16777216.; };
+  grid_phase_ = 6.2831853 * unit();
+  grid_angle_ = .62 * (unit() - .5);
+  block_width_ = 35. + 4. * unit();
+  const int side = unit() < .5 ? -1 : 1;
+  const int wing = unit() < .5 ? -1 : 1;
+  workshop_site_ = street_point(1.55 * wing, .85 * side);
   nodes_.push_back({0, 0, street_point(0, 0), {}});
   node_index_[{0, 0}] = 0;
-  // A small market street and incomplete side streets provide the starting
-  // frontier.
+  auto found = [&](int x, int y, int c, int r) {
+    auto type = y == 0 && r == 0 ? RoadClass::Arterial
+                : (x == 0 && c == 0) || (y == side && r == side)
+                    ? RoadClass::Collector
+                    : RoadClass::Local;
+    add_road(find_node(x, y), c, r, type);
+  };
   for (int dir : {-1, 1})
     for (int i = 1; i <= 2; ++i)
-      add_road(find_node(dir * (i - 1), 0), dir * i, 0);
+      found(dir * (i - 1), 0, dir * i, 0);
   for (int c = -2; c <= 2; ++c)
     for (int r : {-1, 1})
-      if (!(c == 2 && r == -1))
-        add_road(find_node(c, 0), c, r);
-  for (int r : {-1, 1})
-    for (int c = -2; c < 2; ++c)
-      if (find_node(c + 1, r) >= 0 && (c + r) % 3 != 0)
-        add_road(find_node(c, r), c + 1, r);
-  add_road(find_node(-1, -1), -1, -2);
-  add_road(find_node(-1, -2), 0, -2);
-  add_road(find_node(0, -2), 0, -1);
-  add_road(find_node(1, 1), 1, 2);
-  add_road(find_node(1, 2), 0, 2);
+      found(c, 0, c, r);
+  // A founding bus circuit and two staggered residential wings.
+  for (int c = -2; c < 2; ++c)
+    for (int r : {-1, 1})
+      if (r == side || c != wing)
+        found(c, r, c + 1, r);
+  for (int r : {-1, 1}) {
+    int c = wing * r;
+    found(c, r, c, 2 * r);
+    found(c, 2 * r, 0, 2 * r);
+    if (r == side)
+      found(0, 2 * r, 0, r);
+  }
   for (int pass = 0; pass < 4; ++pass)
     for (int e = 0; e < int(roads_.size()); ++e)
       develop(e, true);
@@ -102,7 +108,7 @@ int City::find_node(int c, int r) const {
   auto it = node_index_.find({c, r});
   return it == node_index_.end() ? -1 : it->second;
 }
-int City::add_road(int a, int c, int r) {
+int City::add_road(int a, int c, int r, RoadClass type, bool bridge) {
   int b = find_node(c, r);
   if (b < 0) {
     b = nodes_.size();
@@ -112,8 +118,8 @@ int City::add_road(int a, int c, int r) {
   Road road{};
   road.a = a;
   road.b = b;
-  road.type = hierarchy(nodes_[a].col, nodes_[a].row, c, r);
-  road.bridge = std::abs(nodes_[a].col - c) > 1;
+  road.type = type;
+  road.bridge = bridge;
   for (int i = 0; i <= 8; ++i) {
     double t = i / 8.;
     road.path[i] = street_point(std::lerp(double(nodes_[a].col), double(c), t),
@@ -132,114 +138,6 @@ int City::add_road(int a, int c, int r) {
   nodes_[a].edges.push_back(e);
   nodes_[b].edges.push_back(e);
   return e;
-}
-bool City::grow() {
-  struct Candidate {
-    double score;
-    int origin, col, row;
-  };
-  std::vector<Candidate> candidates;
-  const District *target = nullptr;
-  for (const auto &district : districts)
-    if (population_ >= district.threshold &&
-        find_node(district.col, district.row) < 0) {
-      target = &district;
-      break;
-    }
-  for (int i = 0; i < int(nodes_.size()); ++i) {
-    const auto &n = nodes_[i];
-    if (!connected(i))
-      continue;
-    for (auto [dc, dr] : std::array<std::pair<int, int>, 4>{
-             {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}}) {
-      int c = n.col + dc, r = n.row + dr;
-      // The boulevard crosses the floodplain in one project between dry banks.
-      if (!site_.geographic() && r == 0 && n.row == 0 && c == 3) {
-        if (population_ < 3500)
-          continue;
-        c = n.col == 2 ? 4 : 2;
-      }
-      if (!site_.geographic() && r == -4 && n.row == -4 && c == 4) {
-        if (population_ < 10500)
-          continue;
-        c = n.col == 3 ? 5 : 3;
-      }
-      int b = find_node(c, r);
-      if (b >= 0 &&
-          (i > b || std::any_of(n.edges.begin(), n.edges.end(), [&](int e) {
-             return roads_[e].a == b || roads_[e].b == b;
-           })))
-        continue;
-      auto p = street_point(c, r);
-      if (std::abs(p.x) > half_width - 18 || std::abs(p.z) > half_depth - 18)
-        continue;
-      auto type = hierarchy(n.col, n.row, c, r);
-      double near = 100.;
-      for (const auto &district : districts)
-        if (population_ >= district.threshold)
-          near = std::min(near, std::hypot(c - district.col, r - district.row));
-      double score =
-          -2.8 * near + double(draw() % 1000) / 310. + (b >= 0 ? 1.2 : 0);
-      if (target) {
-        // Reach the new center along a through corridor, then fill its local
-        // blocks.
-        double remaining =
-            std::abs(target->col - c) + std::abs(target->row - r);
-        double previous =
-            std::abs(target->col - n.col) + std::abs(target->row - n.row);
-        if (remaining < previous && type != RoadClass::Local)
-          score +=
-              35. - 2. * remaining + (type == RoadClass::Arterial ? 2. : 0.);
-      }
-      // Connect both banks by a second route as the northern quarter fills.
-      if (!site_.geographic() && population_ >= 10500 && n.row == -4 && r == -4 && c >= 1 && c <= 6)
-        score += 17.;
-      candidates.push_back({score, i, c, r});
-    }
-  }
-  std::stable_sort(candidates.begin(), candidates.end(),
-                   [](auto a, auto b) { return a.score > b.score; });
-  for (auto candidate : candidates) {
-    const auto &n = nodes_[candidate.origin];
-    auto type = hierarchy(n.col, n.row, candidate.col, candidate.row);
-    Point prev = n.pos, end = street_point(candidate.col, candidate.row);
-    bool viable = true;
-    double clearance = road_width(type) * .5 + 4.3;
-    for (const auto &lot : buildings_)
-      if (segment_distance(lot.pos, prev, end) < clearance) {
-        viable = false;
-        break;
-      }
-    for (int k = 1; k <= 8 && viable; ++k) {
-      Point p =
-          street_point(std::lerp(double(n.col), double(candidate.col), k / 8.),
-                       std::lerp(double(n.row), double(candidate.row), k / 8.));
-      bool crossing = std::abs(n.col - candidate.col) > 1 &&
-                      std::abs(p.x - river_center(p.z)) < 40;
-      viable = crossing ||
-               (!site_.inland_water(p) && site_.elevation(p) > 1.8 && site_.elevation(prev) > 1.8 &&
-                std::abs(height(p) - height(prev)) / distance(prev, p) < .24);
-      for (const auto &f : facilities_)
-        if (segment_distance(f.center, prev, p) <
-                road_width(type) * .5 +
-                    (type == RoadClass::Arterial &&
-                             f.kind == FacilityKind::Playground
-                         ? 18.
-                         : f.radius + 1.5) ||
-            segment_distance(f.gate, prev, p) < road_width(type) * .5 + 1.4)
-          viable = false;
-      prev = p;
-    }
-    if (!viable)
-      continue;
-    int edge = add_road(candidate.origin, candidate.col, candidate.row);
-    record(roads_[edge].bridge            ? "Bridge construction began"
-           : type == RoadClass::Arterial  ? "Boulevard construction began"
-           : type == RoadClass::Collector ? "Collector construction began"
-                                          : "Street construction began");
-    return true;
-  }
-  return false;
 }
 bool City::develop(int e, bool initial) {
   Road &road = roads_[e];
@@ -270,12 +168,9 @@ bool City::develop(int e, bool initial) {
       for (int r = node.row - 2; r <= node.row + 2 && clear; ++r) {
         for (auto [dc, dr] :
              std::array<std::pair<int, int>, 2>{{{1, 0}, {0, 1}}}) {
-          auto type = hierarchy(c, r, c + dc, r + dr);
-          if (type == RoadClass::Local)
-            continue;
           if (segment_distance(p, street_point(c, r),
                                street_point(c + dc, r + dr)) <
-              road_width(type) * .5 + 4.9)
+              road_width(RoadClass::Local) * .5 + 4.9)
             clear = false;
         }
       }
@@ -295,11 +190,15 @@ bool City::develop(int e, bool initial) {
     if (!clear)
       continue;
     int style = int(draw() >> 8) % 997;
-    bool east = p.x > (site_.geographic() ? 116. : river_center(p.z) + 20);
-    const bool yard = (p.x < -70 && p.z > 10 && p.z < 65) || (east && p.z > 0);
-    const bool high_street =
-        road.type == RoadClass::Arterial ||
-        (road.type == RoadClass::Collector && std::abs(p.x + 30) < 54);
+    bool yard = distance(p, workshop_site_) < 43.;
+    if (!initial && road.type != RoadClass::Local)
+      for (const auto &lot : buildings_)
+        if (lot.use == Use::Works && distance(p, lot.pos) < 42.) {
+          yard = true;
+          break;
+        }
+    const bool high_street = road.type == RoadClass::Arterial ||
+                             (road.type == RoadClass::Collector && style % 3 == 0);
     Use use = yard && style % 5 != 0          ? Use::Works
               : high_street && style % 4 != 0 ? Use::Shops
                                               : Use::Housing;
@@ -339,13 +238,13 @@ int City::target_floors(const Building &b) const {
   if (b.use == Use::Works)
     return 1 + b.style % 2;
   int base = 1 + b.style % 3;
-  double radius = distance(b.pos, street_point(0, 0));
+  double visits = frontage_visits(b.frontage);
   bool frontage = roads_[b.frontage].type != RoadClass::Local;
-  if (population_ >= 6500 && radius < 78 && frontage)
+  if (population_ >= 6500 && visits >= 530. && frontage)
     return 9 + b.style % 8;
-  if (population_ >= 3200 && radius < 100)
+  if (population_ >= 3200 && visits >= 260.)
     return 4 + b.style % (frontage ? 5 : 3);
-  if (population_ >= 5500 && frontage && radius < 270)
+  if (population_ >= 5500 && frontage && visits >= 140.)
     return 4 + b.style % 4;
   return base;
 }
@@ -357,7 +256,7 @@ bool City::redevelop() {
     int gain = target_floors(b) - b.floors;
     if (gain <= 0 || tick_ - b.started < build_time)
       continue;
-    double rank = gain * 100. - distance(b.pos, street_point(0, 0)) * .12;
+    double rank = gain * 100. + std::log1p(frontage_visits(b.frontage));
     if (rank > best) {
       best = rank;
       chosen = i;
@@ -374,7 +273,7 @@ bool City::redevelop() {
   b.started = tick_;
   completions_.push_back({tick_ + build_time, chosen, gain});
   renewals_.push_back(chosen);
-  record("Downtown reconstruction began");
+  record("Neighbourhood reconstruction began");
   return true;
 }
 bool City::connected(int node) const {
@@ -474,6 +373,7 @@ void City::advance(int ticks) {
       life_.hire_waiting(*this);
     if (tick_ % (12 * planning_interval) == 0 &&
         population_ * 100 >= capacity_ * 82 && tick_ >= vacant_ticks_) {
+      survey_trips();
       if (plan % 48 == 12)
         grow();
       bool built = (plan % 60 == 0 && redevelop());
@@ -537,10 +437,14 @@ uint64_t City::digest() const {
   for (const auto &n : nodes_) {
     mix(n.col);
     mix(n.row);
+    mix(std::bit_cast<uint64_t>(n.pos.x));
+    mix(std::bit_cast<uint64_t>(n.pos.z));
   }
   for (const auto &r : roads_) {
     mix(r.a);
     mix(r.b);
+    mix(int(r.type));
+    mix(r.bridge);
     mix(r.started);
     mix(r.opens);
   }
@@ -548,6 +452,8 @@ uint64_t City::digest() const {
     mix(std::bit_cast<uint64_t>(b.pos.x));
     mix(std::bit_cast<uint64_t>(b.pos.z));
     mix(b.style);
+    mix(int(b.use));
+    mix(b.frontage);
     mix(b.started);
     mix(b.previous_floors);
     mix(b.floors);

@@ -51,7 +51,7 @@ func _arrive(model,lat:float,lon:float,name_on_map:String) -> void:
 	var scene=World.instantiate()
 	scene.model=model
 	scene.hud.place_name=name_on_map if name_on_map!="" else "새 정착지"
-	scene.hud.place_subtitle="%.5f°, %.5f°   /   실제 지형"%[lat,lon]
+	scene.hud.place_subtitle="%.5f°, %.5f°   ·   시드 %d"%[lat,lon,model.summary().seed]
 	_attach(scene)
 	world.process_mode=Node.PROCESS_MODE_DISABLED
 	world.hud.hide()

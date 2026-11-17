@@ -85,6 +85,7 @@ public:
       stocks.push_back(b.open ? b.stock : -1);
     d["stocks"] = stocks;
     d["tick"] = state.tick();
+    d["seed"] = int64_t(state.seed());
     int absolute = state.tick() / city::ticks_per_minute + city::opening_minute;
     d["minute"] = absolute % city::minutes_per_day;
     d["day"] = 1 + absolute / city::minutes_per_day;
