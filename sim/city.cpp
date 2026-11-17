@@ -54,7 +54,10 @@ uint32_t City::draw() {
   random_ = random_ * 1664525u + 1013904223u;
   return random_;
 }
-City::City(uint32_t seed) : seed_(seed), random_(seed) {
+double City::street_height(const Road &road, Point p) const {
+  return site_.geographic() ? height(p) : road_height(road, p);
+}
+City::City(uint32_t seed, Site site) : site_(std::move(site)), seed_(seed), random_(seed) {
   nodes_.push_back({0, 0, street_point(0, 0), {}});
   node_index_[{0, 0}] = 0;
   // A small market street and incomplete side streets provide the starting
@@ -155,12 +158,12 @@ bool City::grow() {
              {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}}) {
       int c = n.col + dc, r = n.row + dr;
       // The boulevard crosses the floodplain in one project between dry banks.
-      if (r == 0 && n.row == 0 && c == 3) {
+      if (!site_.geographic() && r == 0 && n.row == 0 && c == 3) {
         if (population_ < 3500)
           continue;
         c = n.col == 2 ? 4 : 2;
       }
-      if (r == -4 && n.row == -4 && c == 4) {
+      if (!site_.geographic() && r == -4 && n.row == -4 && c == 4) {
         if (population_ < 10500)
           continue;
         c = n.col == 3 ? 5 : 3;
@@ -193,7 +196,7 @@ bool City::grow() {
               35. - 2. * remaining + (type == RoadClass::Arterial ? 2. : 0.);
       }
       // Connect both banks by a second route as the northern quarter fills.
-      if (population_ >= 10500 && n.row == -4 && r == -4 && c >= 1 && c <= 6)
+      if (!site_.geographic() && population_ >= 10500 && n.row == -4 && r == -4 && c >= 1 && c <= 6)
         score += 17.;
       candidates.push_back({score, i, c, r});
     }
@@ -218,8 +221,8 @@ bool City::grow() {
       bool crossing = std::abs(n.col - candidate.col) > 1 &&
                       std::abs(p.x - river_center(p.z)) < 40;
       viable = crossing ||
-               (ground(p) > 1.8 && ground(prev) > 1.8 &&
-                std::abs(ground(p) - ground(prev)) / distance(prev, p) < .24);
+               (!site_.inland_water(p) && site_.elevation(p) > 1.8 && site_.elevation(prev) > 1.8 &&
+                std::abs(height(p) - height(prev)) / distance(prev, p) < .24);
       prev = p;
     }
     if (!viable)
@@ -249,7 +252,7 @@ bool City::develop(int e, bool initial) {
     double offset = (slot % 2 ? 1 : -1) * (road_width(road.type) * .5 + 6.6);
     p.x -= dz * offset / length;
     p.z += dx * offset / length;
-    if (ground(p) < 2.5 ||
+    if (site_.inland_water(p) || site_.elevation(p) < (site_.geographic() ? 1. : 2.5) ||
         std::any_of(buildings_.begin(), buildings_.end(), [&](const auto &lot) {
           return distance(p, lot.pos) < 11.6;
         }))
@@ -283,7 +286,7 @@ bool City::develop(int e, bool initial) {
     if (!clear)
       continue;
     int style = int(draw() >> 8) % 997;
-    bool east = p.x > river_center(p.z) + 20;
+    bool east = p.x > (site_.geographic() ? 116. : river_center(p.z) + 20);
     const bool yard = (p.x < -70 && p.z > 10 && p.z < 65) || (east && p.z > 0);
     const bool high_street =
         road.type == RoadClass::Arterial ||
@@ -508,6 +511,12 @@ uint64_t City::digest() const {
     h ^= value;
     h *= 1099511628211ULL;
   };
+  if (site_.geographic()) {
+    mix(std::bit_cast<uint64_t>(site_.latitude));
+    mix(std::bit_cast<uint64_t>(site_.longitude));
+    for (auto y : site_.elevations) mix(y);
+    for (auto water : site_.lake) mix(water);
+  }
   mix(life_.digest());
   mix(economy_.digest());
   mix(seed_);

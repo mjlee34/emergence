@@ -1,4 +1,8 @@
 extends Control
+signal map_world_requested
+var world_button:=Button.new()
+var place_name:="Alder Reach"
+var place_subtitle:="River valley   /   Fixture terrain"
 signal construction_requested
 signal freight_requested
 signal counter_requested
@@ -71,8 +75,8 @@ func _ready() -> void:
 	sans.font_names=PackedStringArray(["Avenir Next","Helvetica Neue","Arial"])
 	serif.font_names=PackedStringArray(["Baskerville","Georgia","Times New Roman"])
 	_label(self,"E M E R G E N C E",Vector2(82,30),18,IVORY)
-	_label(self,"Alder Reach",Vector2(34,69),53,IVORY,serif)
-	_label(self,"River valley   /   Fixture terrain",Vector2(37,140),16,MUTED)
+	_label(self,place_name,Vector2(34,69),53,IVORY,serif)
+	_label(self,place_subtitle,Vector2(37,140),16,MUTED)
 	entry=_label(self,"",Vector2(37,171),14,GOLD)
 	live=_label(self,"",Vector2.ZERO,14,IVORY)
 	live.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
@@ -94,6 +98,11 @@ func _ready() -> void:
 	_style_button(street_button,false)
 	add_child(street_button)
 	street_button.pressed.connect(func(): street_requested.emit())
+	world_button.text="World map"
+	world_button.tooltip_text="Choose a settlement site (M)"
+	_style_button(world_button,false)
+	add_child(world_button)
+	world_button.pressed.connect(func(): map_world_requested.emit())
 	works_button.text="Construction"
 	works_button.tooltip_text="Follow active road and building sites (G)"
 	_style_button(works_button,false)
@@ -231,6 +240,7 @@ func _layout() -> void:
 	map_button.position=Vector2(reset_button.position.x-map_button.get_combined_minimum_size().x-7,66)
 	street_button.position=Vector2(map_button.position.x-street_button.get_combined_minimum_size().x-7,66)
 	works_button.position=Vector2(street_button.position.x-works_button.get_combined_minimum_size().x-7,66)
+	world_button.position=Vector2(works_button.position.x-world_button.get_combined_minimum_size().x-7,66)
 	life_panel.position=Vector2(34,size.y-345)
 	ledger.position=Vector2(size.x-35-ledger.get_combined_minimum_size().x,332 if map_open else 112)
 	queue_redraw()
@@ -357,7 +367,7 @@ func sync_map(sim,count:int,buildings:int) -> void:
 		var b:Dictionary=sim.lot(land_dots.size())
 		land_dots.append(Vector2(b.pos.x,b.pos.z))
 		land_uses.append(b.use)
-	if river.is_empty():
+	if river.is_empty() and not sim.is_geographic():
 		for z in range(-320,321,8):
 			river.append(Vector2(sim.river_x(z),z))
 	while map_paths.size()<count:

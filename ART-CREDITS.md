@@ -13,3 +13,9 @@ EMERGENCE generates its buildings, vehicles, street geometry and residents in Go
 | [Tree Small 02](https://polyhaven.com/a/tree_small_02) | Rico Cilliers | Deciduous trees and street planting |
 
 The material images were colour-graded. The companion maps store tangent-space normal X/Y in red/green and roughness in blue. The two foliage atlases were rendered from the original meshes at three elevations and two azimuths, then instanced across the valley.
+
+## World atlas and terrain
+
+The world atlas uses Natural Earth II with shaded relief and water at 1:50 million, projected into Web Mercator. Boundaries, populated places and lake outlines come from Natural Earth. The project distributes these data in the public domain. [Natural Earth downloads](https://www.naturalearthdata.com/downloads/)
+
+Elevation tiles use the Terrarium encoding from Tilezen / Mapzen. The app shades these elevations for regional maps and samples them into a local grid for the simulator. Worldwide terrain, including the three offline regions, has multiple source providers. [Dataset and distribution](https://registry.opendata.aws/terrain-tiles/) · [Provider attribution bundled in the app](game/art/atlas/credits.txt) · [Source and licensing details](https://github.com/tilezen/joerd/blob/master/docs/attribution.md)

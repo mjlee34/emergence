@@ -1,4 +1,5 @@
 extends Node3D
+signal map_requested
 const BuildingWorks=preload("res://scripts/building_works.gd")
 const Landscape=preload("res://scripts/landscape.gd")
 const Town=preload("res://scripts/town.gd")
@@ -7,7 +8,7 @@ const People=preload("res://scripts/people.gd")
 const Trade=preload("res://scripts/trade.gd")
 const Hud=preload("res://scripts/hud.gd")
 const TICKS_PER_SECOND=4.
-var model:=CityModel.new()
+var model:CityModel
 var orbit:=Orbit.new()
 var land:=Landscape.new()
 var town:=Town.new()
@@ -64,7 +65,9 @@ func _ready() -> void:
 			if requested in [1,10,100,1000]:
 				speed=requested
 				last_speed=requested
-	model.reset(seed_value)
+	if not model:
+		model=CityModel.new()
+		if seed_value!=147: model.reset(seed_value)
 	_lighting()
 	add_child(land)
 	land.create(model)
@@ -88,6 +91,7 @@ func _ready() -> void:
 	var canvas:=CanvasLayer.new()
 	add_child(canvas)
 	canvas.add_child(hud)
+	hud.map_world_requested.connect(func(): map_requested.emit())
 	hud.speed_selected.connect(_select_speed)
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
@@ -432,6 +436,7 @@ func _select_speed(value:int) -> void:
 func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_M: map_requested.emit()
 			KEY_G: _toggle_construction()
 			KEY_H: _fit_city()
 			KEY_V: _street_view()

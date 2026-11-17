@@ -18,13 +18,13 @@ struct Entrance {
   int edge, k, side;
   WalkPoint door;
 };
-WalkPoint sidewalk(const Road &r, int k, int side) {
+WalkPoint sidewalk(const City &city, const Road &r, int k, int side) {
   auto p = r.path[k], a = r.path[std::max(k - 1, 0)],
        b = r.path[std::min(k + 1, 8)];
   double scale = side * (road_width(r.type) * .5 + .48) / distance(a, b);
   p.x -= (b.z - a.z) * scale;
   p.z += (b.x - a.x) * scale;
-  return {p, road_height(r, p) + .27};
+  return {p, city.street_height(r, p) + .27};
 }
 Entrance entrance(const City &city, int id) {
   const auto &b = city.buildings()[id];
@@ -39,7 +39,7 @@ Entrance entrance(const City &city, int id) {
       (5.8 + (b.style % 5) * .47) * .5 + (b.use == Use::Housing ? .32 : 1.55);
   Point door = {b.pos.x + (p.x - b.pos.x) * doorstep / d,
                 b.pos.z + (p.z - b.pos.z) * doorstep / d};
-  return {b.frontage, k, side, {door, ground(door) + .3}};
+  return {b.frontage, k, side, {door, city.height(door) + .3}};
 }
 void append(Footpath &path, WalkPoint p) {
   double d = path.points.empty() ? 0 : distance(path.points.back().pos, p.pos);
@@ -48,7 +48,7 @@ void append(Footpath &path, WalkPoint p) {
   path.lengths.push_back(path.lengths.empty() ? 0 : path.lengths.back() + d);
   path.points.push_back(p);
 }
-void walk_edge(Footpath &path, const Road &road, int a, int b, int side) {
+void walk_edge(const City &city, Footpath &path, const Road &road, int a, int b, int side) {
   // Stop a sample before the junction and join curb tangents around the corner.
   // Straight-through trips changing sidewalk cross the approach perpendicular
   // to traffic.
@@ -58,7 +58,7 @@ void walk_edge(Footpath &path, const Road &road, int a, int b, int side) {
   if (path.points.size() >= 2 && a != b) {
     auto prev = path.points[path.points.size() - 2].pos,
          last = path.points.back().pos;
-    auto first = sidewalk(road, a, side), next = sidewalk(road, a + step, side);
+    auto first = sidewalk(city, road, a, side), next = sidewalk(city, road, a + step, side);
     Point u = {last.x - prev.x, last.z - prev.z},
           v = {next.pos.x - first.pos.x, next.pos.z - first.pos.z};
     Point delta = {first.pos.x - last.x, first.pos.z - last.z};
@@ -75,11 +75,11 @@ void walk_edge(Footpath &path, const Road &road, int a, int b, int side) {
         corner = {first.pos.x + v.x * along, first.pos.z + v.z * along};
       }
       if (distance(last, corner) < 16 && distance(first.pos, corner) < 16)
-        append(path, {corner, ground(corner) + .37});
+        append(path, {corner, city.height(corner) + .37});
     }
   }
   for (int k = a;; k += step) {
-    append(path, sidewalk(road, k, side));
+    append(path, sidewalk(city, road, k, side));
     if (k == b)
       break;
   }
@@ -93,12 +93,12 @@ Footpath connect(const City &city, int origin, int target) {
   append(path, a.door);
   if (a.edge == b.edge) {
     if (a.side == b.side)
-      walk_edge(path, first, a.k, b.k, a.side);
+      walk_edge(city, path, first, a.k, b.k, a.side);
     else {
       const double near = first.lengths[a.k] + first.lengths[b.k];
       int crossing = near < first.lengths.back() ? 1 : 7;
-      walk_edge(path, first, a.k, crossing, a.side);
-      walk_edge(path, first, crossing, b.k, b.side);
+      walk_edge(city, path, first, a.k, crossing, a.side);
+      walk_edge(city, path, first, crossing, b.k, b.side);
     }
   } else {
     // Both ends of each frontage participate in the shortest walk, including
@@ -151,14 +151,14 @@ Footpath connect(const City &city, int origin, int target) {
       chain.push_back(e);
       n = n == roads[e].a ? roads[e].b : roads[e].a;
     }
-    walk_edge(path, first, a.k, n == first.a ? 0 : 8, a.side);
+    walk_edge(city, path, first, a.k, n == first.a ? 0 : 8, a.side);
     for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
       const auto &r = roads[*it];
       bool forward = n == r.a;
-      walk_edge(path, r, forward ? 0 : 8, forward ? 8 : 0, forward ? 1 : -1);
+      walk_edge(city, path, r, forward ? 0 : 8, forward ? 8 : 0, forward ? 1 : -1);
       n = forward ? r.b : r.a;
     }
-    walk_edge(path, last, n == last.a ? 0 : 8, b.k, b.side);
+    walk_edge(city, path, last, n == last.a ? 0 : 8, b.k, b.side);
   }
   append(path, b.door);
   return path;
@@ -341,7 +341,7 @@ PersonPose Life::pose(const City &c, int id, const DailyState &s,
       Point p = {a.door.pos.x + along * std::cos(b.yaw),
                  a.door.pos.z - along * std::sin(b.yaw)};
       double heading = b.yaw + (std::cos(phase) > 0 ? 1.5708 : -1.5708);
-      return {p, ground(p) + .20, heading};
+      return {p, c.height(p) + .20, heading};
     }
     return {a.door.pos, a.door.height, b.yaw};
   }

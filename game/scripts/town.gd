@@ -186,7 +186,7 @@ func _pave_blocks(population:int,time:float,initial:bool) -> void:
 		var bottom:PackedVector3Array=horizontal[cell+Vector2i.DOWN]
 		var center:=top[4].lerp(bottom[4],.5)
 		var radius:=Vector2(center.x+30,center.z-6).length()
-		var industrial:bool=center.x>model.river_x(center.z)+24 and center.z>0
+		var industrial:bool=center.x>(116. if model.is_geographic() else model.river_x(center.z)+24) and center.z>0
 		if not industrial and radius>minf(210.,population*.026): continue
 		var left:PackedVector3Array=vertical[cell]
 		var right:PackedVector3Array=vertical[cell+Vector2i.RIGHT]

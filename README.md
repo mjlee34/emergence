@@ -1,6 +1,8 @@
 # EMERGENCE
 
-Alder Reach opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
+Choose a point on Earth and descend from the map to a new settlement on its measured terrain. Gimje Plain, the Loire Valley and the Sacramento Valley are bundled for offline play. [Watch the flight into Gimje](captures/settlement-flight.mp4)
+
+The original Alder Reach fixture opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
 
 ![Street and regional views of Alder Reach before and after the material and lighting update](captures/visual-comparison.jpg)
 
@@ -12,7 +14,17 @@ Alder Reach opens at 07:45. On the market street, commuters pass the bakery on t
 
 ## Play on Apple Silicon
 
-Open `dist/EMERGENCE.app` after exporting. The simulation starts at **1×** with one local minute passing per real second. At **10×**, a full day takes 2 minutes 24 seconds. Use **1000×** to watch streets extend, districts form and downtown lots redevelop. The district map marks arterials in gold, collectors in teal and local streets with thin pale lines. Green, amber and purple parcels show housing, commerce and industry.
+Open `dist/EMERGENCE.app` after exporting. Click the map, search for a city in English or Korean, or paste latitude and longitude or a Google Maps place URL. Select **이곳에 정착** to survey the site and descend. In the city, **M** opens the map. Returning to the current city resumes play. Starting a new settlement replaces the current one.
+
+The atlas uses Natural Earth cartography and Mapzen elevations. New locations require an internet connection for their initial survey. Each survey samples a 3.36 km square on a 20 m grid around the chosen coordinate. Surface detail depends on the source DEM. The central 960 × 640 m supports urban growth. The prototype uses sites between 85° south and 85° north where the founding neighbourhood fits on dry, gently sloping ground. The water model uses sea level and mapped Natural Earth lakes. Narrow rivers, minor lakes, dikes and below-sea-level land require finer hydrography. [Geographic data credits](game/art/atlas/credits.txt)
+
+### Google Maps in the Mac app
+
+Supplying the environment variable `EMERGENCE_GOOGLE_MAPS_KEY` opens an embedded Google map at startup. Enable the Maps JavaScript API for the browser key and restrict its website origin to `http://127.0.0.1:43861/*`. Run `dist/EMERGENCE.app/Contents/MacOS/EMERGENCE` from the shell containing the variable. The page stays on loopback, WebKit loads Google's SDK, and a click passes the selected latitude and longitude to the terrain importer. Google renders its map through the zoom. The 3D city uses the independently sampled elevation grid. The key is read at runtime. [Google setup instructions](https://developers.google.com/maps/documentation/javascript/get-api-key)
+
+Without a key, the built-in atlas opens directly. The Google 지도 ↗ button opens Google Maps in the browser. Copy a coordinate or place link back into the atlas search field.
+
+The simulation starts at **1×** with one local minute passing per real second. At **10×**, a full day takes 2 minutes 24 seconds. Use **1000×** to watch streets extend, districts form and downtown lots redevelop. The district map marks arterials in gold, collectors in teal and local streets with thin pale lines. Green, amber and purple parcels show housing, commerce and industry.
 
 | Action | Control |
 | --- | --- |
@@ -52,7 +64,7 @@ tools/export-macos.sh
 open dist/EMERGENCE.app
 ```
 
-The Godot runtime, dependency checkout, and build outputs stay local. The project generates the terrain, buildings, river and vehicles. Photo-based materials and instanced tree canopies are bundled for offline use. [Art sources](ART-CREDITS.md)
+The Godot runtime, dependency checkout, and build outputs stay local. The application loads geographic terrain and generates settlement geometry and vehicles. Photo-based materials and instanced tree canopies are bundled for offline use. [Art sources](ART-CREDITS.md)
 
 ## The vertical slice
 
@@ -94,16 +106,16 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 
 | Module | Responsibility |
 | --- | --- |
-| `geo/` | Terrain height, water level relative to local ground, and fixture street coordinates in metres. The analytical fixture supplies the same surface to planning and rendering. |
+| `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Version 5 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 5 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
 ## Engineering limits of this milestone
 
 - **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Two reserved crossings connect dry banks. District sites and major rights of way are fixture inputs. A free-angle planner for arbitrary geography will also need edge splitting and bridge-site selection.
-- **Terrain integration.** A single height sampler keeps planning and road rendering aligned. Real elevation tiles will need a projected local origin, shared elevation datum, shoreline masks, and a street grading pass. The current location is fictional.
+- **Terrain integration.** Imported sites have a shared metre-based height sampler. The present road planner keeps its warped lattice and fixed district targets. Real-site bridge placement, local street grading and detailed river masks are future work.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
 - **Growth horizon.** This model fills a finite site and reaches capacity. Car traffic runs independently of the individual pedestrian itineraries. Delivery vans carry actual wholesale orders. Household aging, road congestion and business closures remain future work.
 
@@ -124,8 +136,11 @@ After building the extension and importing the project, run the integration chec
 
 ```sh
 "$GODOT" --headless --path game --script ../tests/playable.gd
+"$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
 ```
 
-These checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, and a resident’s commute, lunch trip and return home.
+The map checks cover coordinate selection and search, the three bundled real sites, water rejection, the flight into the simulation and resuming a city. On macOS, running `"$GODOT" --path game --script ../tests/google_picker.gd` also exercises the embedded WebKit page using a local map test double. Live Google imagery requires a configured key.
+
+The simulation checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, and a resident’s commute, lunch trip and return home.
 
 The market checks reconcile sales with wallets and payroll with business expenses, conserve cash and stock across transfers, and verify that goods enter shop inventory after unloading. To inspect the opening café’s delivery use `--counter=1 --freight` after Godot’s `--` argument separator.

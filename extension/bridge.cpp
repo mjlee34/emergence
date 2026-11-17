@@ -7,12 +7,16 @@ using namespace godot;
 class CityModel : public RefCounted {
   GDCLASS(CityModel, RefCounted)
   city::City state;
-  static Vector3 surface(city::Point p) {
-    return Vector3(p.x, city::ground(p), p.z);
+  Vector3 surface(city::Point p) const {
+    return Vector3(p.x, state.height(p), p.z);
   }
 
 protected:
   static void _bind_methods() {
+    ClassDB::bind_method(D_METHOD("settle_at", "seed", "latitude", "longitude", "elevations", "lakes"), &CityModel::settle_at);
+    ClassDB::bind_method(D_METHOD("is_geographic"), &CityModel::is_geographic);
+    ClassDB::bind_method(D_METHOD("inland_water", "x", "z"), &CityModel::inland_water);
+    ClassDB::bind_method(D_METHOD("sea_level"), &CityModel::sea_level);
     ClassDB::bind_method(D_METHOD("reset", "seed"), &CityModel::reset);
     ClassDB::bind_method(D_METHOD("step", "ticks"), &CityModel::step);
     ClassDB::bind_method(D_METHOD("height_at", "x", "z"),
@@ -38,9 +42,21 @@ protected:
   }
 
 public:
+  bool settle_at(int seed, double latitude, double longitude, const PackedInt32Array &samples, const PackedByteArray &lakes) {
+    if (samples.size() != city::Site::side * city::Site::side || lakes.size() != samples.size())
+      return false;
+    city::Site site{latitude, longitude, {samples.ptr(), samples.ptr() + samples.size()}, {lakes.ptr(), lakes.ptr() + lakes.size()}};
+    if (!site.suitable())
+      return false;
+    state = city::City(seed, std::move(site));
+    return true;
+  }
+  bool is_geographic() const { return state.site().geographic(); }
+  bool inland_water(double x, double z) const { return state.site().inland_water({x, z}); }
+  double sea_level() const { return -state.site().datum(); }
   void reset(int seed) { state = city::City(seed); }
   void step(int ticks) { state.advance(ticks); }
-  double height_at(double x, double z) const { return city::ground({x, z}); }
+  double height_at(double x, double z) const { return state.height({x, z}); }
   double river_x(double z) const { return city::river_center(z); }
   Dictionary summary() const {
     Dictionary d;
@@ -249,7 +265,7 @@ public:
     const auto &r = state.roads()[index];
     PackedVector3Array path;
     for (auto p : r.path)
-      path.push_back(Vector3(p.x, city::road_height(r, p), p.z));
+      path.push_back(Vector3(p.x, state.street_height(r, p), p.z));
     const auto &a = state.nodes()[r.a], &b = state.nodes()[r.b];
     d["a"] = Vector2i(a.col, a.row);
     d["b"] = Vector2i(b.col, b.row);
@@ -297,14 +313,21 @@ public:
       double yaw;
       auto p = state.vehicle_position(v, yaw, fraction);
       out.push_back(
-          Vector4(p.x, city::road_height(state.roads()[v.edge], p), p.z, yaw));
+          Vector4(p.x, state.street_height(state.roads()[v.edge], p), p.z, yaw));
     }
     return out;
   }
 };
+#ifdef __APPLE__
+void register_map_view();
+#endif
 void init_city(ModuleInitializationLevel level) {
-  if (level == MODULE_INITIALIZATION_LEVEL_SCENE)
+  if (level == MODULE_INITIALIZATION_LEVEL_SCENE) {
     GDREGISTER_CLASS(CityModel);
+#ifdef __APPLE__
+    register_map_view();
+#endif
+  }
 }
 void stop_city(ModuleInitializationLevel) {}
 extern "C" GDExtensionBool GDE_EXPORT emergence_init(

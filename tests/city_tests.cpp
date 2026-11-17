@@ -9,6 +9,36 @@
     if (!(expr))                                                               \
       throw std::runtime_error(#expr);                                         \
   } while (false)
+void check_geographic_terrain() {
+  using namespace city;
+  Site site;
+  site.latitude = 47.342;
+  site.longitude = .465;
+  site.elevations.resize(Site::side * Site::side);
+  for (int z = 0; z < Site::side; ++z)
+    for (int x = 0; x < Site::side; ++x)
+      site.elevations[z * Site::side + x] = 400 + x + 2*z;
+  site.lake.resize(site.elevations.size());
+  CHECK(site.suitable());
+  CHECK(std::abs(site.height({10, 10}) - 8.15) < 1e-8);
+  City inland(31, site), fixture(31);
+  CHECK(inland.height({40, 80}) != fixture.height({40, 80}));
+  for (const auto &r : inland.roads())
+    for (auto p : r.path)
+      CHECK(inland.street_height(r, p) == site.height(p));
+  inland.advance(1501);
+  auto recovered = restore(checkpoint(inland));
+  CHECK(recovered && recovered->digest() == inland.digest());
+  CHECK(recovered->site().longitude == site.longitude);
+  auto middle = site.elevations.size()/2;
+  site.lake[middle] = 1;
+  CHECK(!site.suitable());
+  site.lake[middle] = 0;
+  site.elevations[middle] += 1600;
+  CHECK(!site.suitable());
+  std::fill(site.elevations.begin(), site.elevations.end(), -25);
+  CHECK(!site.suitable());
+}
 void check_market() {
   using namespace city;
   City c(147);
@@ -97,6 +127,7 @@ void check_construction() {
 
 int main() {
   using namespace city;
+  check_geographic_terrain();
   check_market();
   check_construction();
   auto start = std::chrono::steady_clock::now();

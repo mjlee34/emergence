@@ -88,7 +88,7 @@ VanPose Economy::van(const City &c, const Shipment &s, double tick) const {
   double shift = berth * (road_width(r.type) * .5 - .97 - lane);
   pos.x += std::sin(yaw) * shift;
   pos.z += std::cos(yaw) * shift;
-  return {pos, road_height(r, pos), yaw};
+  return {pos, c.street_height(r, pos), yaw};
 }
 void Economy::open(const City &c, int id) {
   if (id >= int(places_.size()))

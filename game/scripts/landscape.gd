@@ -4,6 +4,9 @@ const X = 480
 const Z = 320
 const STEP = 5
 var model
+var lakes
+var has_lakes:=false
+var sea:=0.
 var groves: Array[MultiMesh]=[]
 var species:=PackedByteArray()
 var instance_ids:=PackedInt32Array()
@@ -16,6 +19,8 @@ func _cell(p:Vector3) -> Vector2i:
 
 func create(sim) -> void:
 	model = sim
+	sea=model.sea_level()
+	if model.is_geographic(): lakes=Forms.new()
 	var land=Forms.new(true)
 	land.finish=Forms.Finish.MEADOW
 	# Sample the playable valley finely and continue the horizon beyond it.
@@ -40,9 +45,13 @@ func create(sim) -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = preload("res://scripts/river.gdshader")
 	water.material_override = mat
+	water.position.y=sea+.025 if model.is_geographic() else 0.
 	add_child(water)
+	if has_lakes:
+		var surface=lakes.attach(self)
+		surface.material_override=mat
 	_forest(rng)
-	_rocks(rng)
+	if not model.is_geographic(): _rocks(rng)
 
 func _facet(g,a: Vector3,b: Vector3,c: Vector3) -> void:
 	var p := (a+b+c)/3
@@ -51,7 +60,11 @@ func _facet(g,a: Vector3,b: Vector3,c: Vector3) -> void:
 	var slope := 1.0-absf((b-a).cross(c-a).normalized().y)
 	var rock := Color("#bab7a1").lerp(Color("#879386"),0.5+0.35*sin(p.y*.56))
 	grass = grass.lerp(rock,clampf((slope-0.1)*3.3+maxf(p.y-33,0)*.046,0,1))
-	if p.y<2.9: grass = Color("#d3c397").lerp(grass,smoothstep(.6,2.9,p.y))
+	if p.y-sea<2.9: grass = Color("#d3c397").lerp(grass,smoothstep(.6,2.9,p.y-sea))
+	if lakes and model.inland_water(p.x,p.z):
+		has_lakes=true
+		var lift:=Vector3.UP*.16
+		lakes.triangle(a+lift,b+lift,c+lift,Color.WHITE,Vector3.UP)
 	g.triangle(a,b,c,grass.lightened(.017*(1+sin(p.x*5+p.z))),Vector3.UP)
 
 func _axis(edge:int) -> PackedInt32Array:
@@ -92,7 +105,7 @@ func _forest(rng: RandomNumberGenerator) -> void:
 		var h: float = model.height_at(x,z)
 		var density := sin(x*.069+sin(z*.07))*.25+cos(z*.078-x*.057)*.2
 		var woodland := absf(x+22)>97 or z < -76 or z>85
-		if h<1.7 or h>36 or rng.randf()>(.55 if woodland else .085)+density: continue
+		if h-sea<1.7 or model.inland_water(x,z) or h>(48. if model.is_geographic() else 36.) or rng.randf()>(.55 if woodland else .085)+density: continue
 		var size := rng.randf_range(.58,1.65)
 		var pos := Vector3(x,h-.32,z)
 		var kind:=1 if rng.randf()<(.64 if h<12 else .24)+.11*sin(z*.08+x*.04) else 0

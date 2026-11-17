@@ -1,5 +1,5 @@
 #pragma once
-#include "geo/terrain.hpp"
+#include "geo/site.hpp"
 #include "sim/economy.hpp"
 #include "sim/life.hpp"
 #include <array>
@@ -50,7 +50,10 @@ struct Event {
 };
 class City {
 public:
-  explicit City(uint32_t seed = 147);
+  explicit City(uint32_t seed = 147, Site site = {});
+  const Site &site() const { return site_; }
+  double height(Point p) const { return site_.height(p); }
+  double street_height(const Road &road, Point p) const;
   void advance(int ticks);
   int tick() const { return tick_; }
   int population() const { return population_; }
@@ -71,6 +74,7 @@ public:
   uint64_t digest() const;
 
 private:
+  Site site_;
   uint32_t seed_, random_;
   int tick_ = 0, population_ = 0, capacity_ = 0, vacant_ticks_ = 0;
   std::vector<Junction> nodes_;

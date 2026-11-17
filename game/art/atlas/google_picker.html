@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMERGENCE · 정착지 선택</title>
+<style>
+*{box-sizing:border-box}html,body,#map{height:100%;margin:0}body{font:16px -apple-system,sans-serif;background:#c5d4c9;color:#f2f0e0}
+#panel{position:absolute;left:22px;top:22px;max-width:calc(100vw - 44px);background:#1e322cf5;padding:18px 22px;border-radius:12px;box-shadow:0 4px 26px #20312733}
+small{color:#c4d8b6;letter-spacing:3px}h1{font-size:25px;margin:9px 0}p{margin:7px 0 13px;font-size:14px}button{font:inherit;cursor:pointer;border:none;border-radius:6px;background:#385145;color:#f2f0e0;padding:8px 14px}#found{background:#cde4b4;color:#21372c}button:disabled{opacity:.53}
+</style>
+<div id="map"></div>
+<section id="panel"><small>EMERGENCE</small><h1>정착지 선택</h1><p id="message" role="status">Google 지도를 여는 중입니다…</p><button id="found" disabled>이곳에 정착</button> <button id="back">세계지도로 돌아가기</button></section>
+<script>
+"use strict";
+const send = data => window.webkit.messageHandlers.settlement.postMessage(JSON.stringify(data));
+const msg = document.querySelector("#message"), found = document.querySelector("#found"), back = document.querySelector("#back");
+let map, marker, point, flight, busy=false;
+back.onclick=()=>send({action:"cancel"});
+found.onclick=()=>{
+  if (!point || busy) return;
+  busy=true; found.disabled=true; back.disabled=true;
+  msg.textContent="선택한 곳의 실제 지형을 확인하고 있습니다…";
+  send({action:"selected",lat:point.lat(),lon:point.lng()});
+};
+function failed(){
+  msg.textContent="Google 지도 연결을 확인해 주세요. 기본 세계지도에서도 정착할 수 있습니다.";
+  found.disabled=true; back.disabled=false;
+}
+window.gm_authFailure=failed;
+window.initMap=()=>{
+  map=new google.maps.Map(document.querySelector("#map"),{
+    center:INITIAL_CENTER,zoom:INITIAL_ZOOM,renderingType:google.maps.RenderingType.VECTOR,
+    isFractionalZoomEnabled:true,tilt:0,heading:0,streetViewControl:false,fullscreenControl:false,clickableIcons:false
+  });
+  msg.textContent="지도를 이동한 뒤 정착할 위치를 클릭하세요.";
+  map.addListener("click",e=>{
+    if(busy || !e.latLng) return;
+    point=e.latLng;
+    if(!marker) marker=new google.maps.Marker({map,icon:{path:google.maps.SymbolPath.CIRCLE,scale:8,fillColor:"#e5d696",fillOpacity:1,strokeColor:"#1e382d",strokeWeight:3}});
+    marker.setPosition(point);
+    msg.textContent=point.lat().toFixed(5)+"°, "+point.lng().toFixed(5)+"°";
+    found.disabled=false;
+  });
+};
+window.cityEvent=event=>{
+  if(event.action==="retry"){
+    busy=false; found.disabled=!point; back.disabled=false; msg.textContent=event.message;
+  }else if(event.action==="fly" && map && point){
+    document.querySelector("#panel").hidden=true;
+    const from=map.getCenter();
+    flight={from, zoom:map.getZoom(), dx:((point.lng()-from.lng()+540)%360)-180,
+      targetZoom:Math.log2(40075016.686*Math.cos(point.lat()*Math.PI/180)*innerHeight/(990*256))};
+  }else if(event.action==="progress" && flight){
+    const t=event.t, ease=v=>v*v*(3-2*v), pan=ease(Math.min(1,t/.5));
+    map.moveCamera({center:{lat:flight.from.lat()+(point.lat()-flight.from.lat())*pan,
+      lng:flight.from.lng()+flight.dx*pan},zoom:flight.zoom+(flight.targetZoom-flight.zoom)*ease(t),heading:0,tilt:0});
+  }
+};
+</script>
+<script async src="https://maps.googleapis.com/maps/api/js?key=MAPS_BROWSER_KEY&amp;callback=initMap&amp;loading=async&amp;language=ko&amp;v=quarterly" onerror="failed()"></script>
+</html>
