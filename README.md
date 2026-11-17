@@ -1,22 +1,25 @@
 # EMERGENCE
 
-Watch Alder Reach grow from a market town into a compact city on both banks of a river. The boulevard reaches across the water, collectors feed the surrounding neighborhoods, workshops gather on the east bank, and central parcels are rebuilt with taller buildings.
+Alder Reach opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
 
-![The two-bank city from the regional camera](captures/region-7200.png)
+![One resident commuting, working, shopping and returning home](captures/resident-day.jpg)
 
-[18-second growth film at 100×](captures/growth.mp4) · [Downtown street detail](captures/market-district.png)
+[Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
 
 ## Play on Apple Silicon
 
-Open `dist/EMERGENCE.app` after exporting. The camera follows the footprint of the city at the opening speed of **10×**. Select **100×** to see roughly 75 simulation days in 18 seconds. The street plan in the upper right traces the actual network. Gold marks arterials, teal marks collectors, and thin pale lines mark local streets.
+Open `dist/EMERGENCE.app` after exporting. The simulation starts at **1×** with one local minute passing per real second. At **10×**, a full day takes 2 minutes 24 seconds. Use **1000×** to watch streets extend, districts form and downtown lots redevelop. The district map marks arterials in gold, collectors in teal and local streets with thin pale lines. Green, amber and purple parcels show housing, commerce and industry.
 
 | Action | Control |
 | --- | --- |
+| Follow a pedestrian | Click the person or choose Meet a resident |
+| Visit a residential street, market or industrial yard | Homes, Markets or Works |
+| Return to the market street | V or Street view |
 | Orbit and take control of the camera | Drag |
 | Pan | Shift-drag, middle-drag, or trackpad pan |
 | Zoom | Scroll or pinch |
 | Frame the current city and resume tracking | H or Fit city |
-| Show or hide the network map | Street plan |
+| Show or hide the network map | Districts |
 | Pause and resume the previous speed | Space or the pause button |
 | Choose 1×, 10×, 100×, or 1000× | Keys 1–4 or the speed buttons |
 
@@ -48,6 +51,10 @@ The Godot runtime, dependency checkout, and build outputs stay local. All landsc
 
 The fixture covers **960 × 640 metres**. Housing demand funds construction and unlocks expansion toward six district sites. The planner reserves through corridors, connects district centers and fills neighboring blocks. On developed central parcels, redevelopment increases height and housing capacity. Additional capacity becomes available when construction finishes.
 
+Every resident has a persistent address. Finished housing admits new residents, and shops and industrial workplaces hire up to their job capacity. Residents seeking work are matched against openings with a preference for nearby workplaces. Occupied housing and employment demand also influence new construction.
+
+With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies. Workers walk to assigned workplaces, visit nearby shops for lunch, return to work and walk home. Other residents run daytime errands from home. Building occupancy and the activity counters follow those individual schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
+
 | Road class | Carriageway | Function |
 | --- | --- | --- |
 | Arterial | 14.2 m | Four lanes, a planted median, and the first river crossing |
@@ -56,18 +63,12 @@ The fixture covers **960 × 640 metres**. Housing demand funds construction and 
 
 Vehicles use least-travel-time paths. Length and street class determine edge cost, speed and lane position. The traffic sample increases with population. Bridge decks use a shared elevation profile for the road mesh and vehicles.
 
-Three captures use seed 147 and one locked regional camera. Span measures the east–west distance between the outermost building centers.
+The earlier regional growth study shows the settlement’s footprint from one fixed camera as the arterial and a second collector cross the river. These captures use the previous simulation clock and seed rules. [Opening settlement](captures/region-0.png) · [Growth across the river](captures/region-1600.png) · [Both river crossings](captures/region-7200.png) · [Regional growth film](captures/growth.mp4)
 
-| Simulation day | Residents | Buildings | Street segments | Span | Image |
-| --- | ---: | ---: | ---: | ---: | --- |
-| 1 | 1,405 | 43 | 23 | 197 m | [Opening settlement](captures/region-0.png) |
-| 17 | 4,964 | 144 | 74 | 611 m | [Growth across the river](captures/region-1600.png) |
-| 76 | 19,587 | 479 | 229 | 723 m | [Both river crossings](captures/region-7200.png) |
-
-Repeat a capture with an absolute image path. Drop `--atlas` to use automatic framing, or use `--detail` for the market district.
+To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick 1110. Four ticks advance the clock by one minute. Use `--district=0`, `1` or `2` for a housing, market or industrial view, or `--atlas` for a fixed regional camera.
 
 ```sh
-"$GODOT" --path game --resolution 1440x900 -- --seed=147 --atlas --at=7200 --capture="$PWD/captures/region-7200.png"
+"$GODOT" --path game --resolution 1440x900 -- --seed=147 --resident=1300 --at=1110 --capture="$PWD/captures/lunch.png"
 ```
 
 ## Architecture
@@ -75,9 +76,9 @@ Repeat a capture with an absolute image path. Drop `--atlas` to use automatic fr
 | Module | Responsibility |
 | --- | --- |
 | `geo/` | Terrain height, water level relative to local ground, and fixture street coordinates in metres. The analytical fixture supplies the same surface to planning and rendering. |
-| `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, and event history. This library compiles independently of Godot. |
-| `replay/` | Version 2 checkpoints contain seed, tick, and a state checksum. Version 1 checkpoints belong to the earlier growth rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
-| `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, and packed vehicle poses to the scene. |
+| `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, and event history. This library compiles independently of Godot. |
+| `replay/` | Version 3 checkpoints contain the seed, tick, and a state checksum which includes resident assignments. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
 ## Engineering limits of this milestone
@@ -85,7 +86,7 @@ Repeat a capture with an absolute image path. Drop `--atlas` to use automatic fr
 - **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Two reserved crossings connect dry banks. District sites and major rights of way are fixture inputs. A free-angle planner for arbitrary geography will also need edge splitting and bridge-site selection.
 - **Terrain integration.** A single height sampler keeps planning and road rendering aligned. Real elevation tiles will need a projected local origin, shared elevation datum, shoreline masks, and a street grading pass. The current location is fictional.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
-- **Growth horizon.** This model fills a finite site and reaches capacity. Household aging, employment-based trips, congestion, freight, and decline belong to later milestones.
+- **Growth horizon.** This model fills a finite site and reaches capacity. Car traffic runs independently of the individual pedestrian itineraries. Household aging, wages, inventory, freight, congestion and decline remain future work.
 
 ## Verification and profiling
 
@@ -98,7 +99,7 @@ ctest --test-dir build-core --output-on-failure
 ./build-core/city_profile
 ```
 
-The profiling executable advances 40,000 ticks and reports elapsed time and city size. Its measurement covers the core simulation, including the period after buildable lots fill. Use Godot's frame profiler for rendering costs.
+The profiling executable advances 40,000 ticks and reports elapsed time and city size. Its measurement covers the core simulation, over approximately seven local days. Use Godot's frame profiler for rendering costs.
 
 After building the extension and importing the project, run the integration checks:
 
@@ -106,4 +107,4 @@ After building the extension and importing the project, run the integration chec
 "$GODOT" --headless --path game --script ../tests/playable.gd
 ```
 
-These checks exercise pause, every speed, camera motion and reset, visible growth, and vehicle movement using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, and expansion to the far bank.
+These checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, and a resident’s commute, lunch trip and return home.

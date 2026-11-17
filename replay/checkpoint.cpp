@@ -2,7 +2,7 @@
 #include <sstream>
 namespace city {
 std::string checkpoint(const City &c) {
-  return "EMERGENCE-2 " + std::to_string(c.seed()) + " " +
+  return "EMERGENCE-3 " + std::to_string(c.seed()) + " " +
          std::to_string(c.tick()) + " " + std::to_string(c.digest());
 }
 std::optional<City> restore(const std::string &record) {
@@ -11,7 +11,7 @@ std::optional<City> restore(const std::string &record) {
   uint32_t seed;
   int tick;
   uint64_t digest;
-  if (!(in >> version >> seed >> tick >> digest) || version != "EMERGENCE-2" ||
+  if (!(in >> version >> seed >> tick >> digest) || version != "EMERGENCE-3" ||
       tick < 0 || (in >> trailing))
     return {};
   City c(seed);

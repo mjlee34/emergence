@@ -2,6 +2,7 @@ extends Node3D
 const Landscape=preload("res://scripts/landscape.gd")
 const Town=preload("res://scripts/town.gd")
 const Orbit=preload("res://scripts/orbit.gd")
+const People=preload("res://scripts/people.gd")
 const Hud=preload("res://scripts/hud.gd")
 const TICKS_PER_SECOND=4.
 var model:=CityModel.new()
@@ -9,14 +10,24 @@ var orbit:=Orbit.new()
 var land:=Landscape.new()
 var town:=Town.new()
 var hud:=Hud.new()
-var speed:=10
-var last_speed:=10
+var speed:=1
+var last_speed:=1
+var people:=People.new()
+var selected:=-1
+var watching:=false
+var click_start:=Vector2.ZERO
+var light:=DirectionalLight3D.new()
+var atmosphere:=Environment.new()
 var remainder:=0.
 var state:Dictionary
 var capture_path:=""
 var capture_tick:=0
 var capture_detail:=false
 var atlas:=false
+var street_capture:=false
+var meet_capture:=false
+var capture_resident:=-1
+var capture_district:=1
 
 func _ready() -> void:
 	var seed_value:=147
@@ -24,6 +35,12 @@ func _ready() -> void:
 		if arg.begins_with("--seed="): seed_value=int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--capture="): capture_path=arg.trim_prefix("--capture=")
 		if arg.begins_with("--at="): capture_tick=maxi(0,int(arg.trim_prefix("--at=")))
+		if arg=="--street": street_capture=true
+		if arg=="--meet": meet_capture=true
+		if arg.begins_with("--resident="): capture_resident=int(arg.trim_prefix("--resident="))
+		if arg.begins_with("--district="):
+			capture_district=clampi(int(arg.trim_prefix("--district=")),0,2)
+			street_capture=true
 		if arg=="--atlas": atlas=true
 		if arg=="--detail": capture_detail=true
 		if arg.begins_with("--speed="):
@@ -37,6 +54,7 @@ func _ready() -> void:
 	land.create(model)
 	add_child(town)
 	town.create(model,land)
+	add_child(people)
 	add_child(orbit)
 	if atlas:
 		orbit.following=false
@@ -54,17 +72,23 @@ func _ready() -> void:
 	add_child(canvas)
 	canvas.add_child(hud)
 	hud.speed_selected.connect(_select_speed)
-	hud.home_requested.connect(orbit.home)
-	if capture_path!="":
-		model.step(capture_tick)
-		speed=0
+	hud.home_requested.connect(_fit_city)
+	hud.street_requested.connect(_street_view)
+	hud.meet_requested.connect(_meet)
+	hud.district_requested.connect(_district_view)
+	if capture_tick>0: model.step(capture_tick)
+	if capture_path!="": speed=0
 	state=model.summary()
 	orbit.frame_city(state.bounds,1.)
+	if street_capture or (not atlas and not capture_detail and capture_path==""): _district_view(capture_district)
+	_sync()
+	if meet_capture: _meet()
+	if capture_resident>=0 and capture_resident<state.population: _watch(capture_resident)
 	_sync()
 	if capture_path!="": _capture.call_deferred()
 
 func _lighting() -> void:
-	var env:=Environment.new()
+	var env:=atmosphere
 	env.background_mode=Environment.BG_COLOR
 	env.background_color=Color("#294240")
 	env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
@@ -78,7 +102,7 @@ func _lighting() -> void:
 	var environment:=WorldEnvironment.new()
 	environment.environment=env
 	add_child(environment)
-	var sun:=DirectionalLight3D.new()
+	var sun:=light
 	sun.light_color=Color("#fff0d5")
 	sun.light_energy=1.15
 	sun.shadow_enabled=true
@@ -108,20 +132,100 @@ func _process(delta:float) -> void:
 	_sync()
 
 func _sync() -> void:
+	var info:Dictionary={}
+	if selected>=0:
+		info=model.resident(selected,remainder)
+		if watching:
+			orbit.pivot=info.position+Vector3.UP*1.0
+			orbit.update_view()
 	town.sync(state,remainder)
+	people.sync(model,orbit,state,remainder,selected)
 	hud.display(state,speed,orbit.azimuth)
-	hud.sync_map(model,state.roads)
+	hud.sync_map(model,state.roads,state.buildings)
+	hud.show_life(state,info,model)
+	var sun_height:=sin((state.minute-360.)/1440.*TAU)
+	var daylight:=smoothstep(-.08,.38,sun_height)
+	light.light_energy=lerpf(.19,1.15,daylight)
+	light.light_color=Color("#a5c2df").lerp(Color("#fff0d5"),daylight)
+	atmosphere.ambient_light_energy=lerpf(.29,.35,daylight)
+
+func _fit_city() -> void:
+	watching=false
+	selected=-1
+	orbit.home()
+
+func _street_view() -> void:
+	_district_view(1)
+
+func _district_view(use:int) -> void:
+	hud.district_title=["Residential streets","Market district","Workshop district"][use]
+	watching=false
+	selected=-1
+	var nearest:=INF
+	for i in state.buildings:
+		var lot:Dictionary=model.lot(i)
+		if lot.use!=use or state.tick-lot.started<state.construction_ticks: continue
+		var path:PackedVector3Array=model.street(lot.frontage).path
+		var stop:Vector3=lot.pos.lerp(path[4],.58)
+		var d:=stop.distance_squared_to(Vector3(-30,4,6))
+		if d<nearest:
+			nearest=d
+			orbit.pivot=stop+Vector3.UP*1.4
+	orbit.following=false
+	orbit.extent=36
+	orbit.azimuth=-.37
+	orbit.elevation=.64
+	orbit.update_view()
+
+func _meet() -> void:
+	if people.ids.is_empty():
+		selected=0 if selected<0 else (selected+1)%state.population
+	else:
+		var nearest:=INF
+		var next_id:=-1
+		for i in people.ids.size():
+			if people.ids[i]==selected: continue
+			var p:=people.poses[i]
+			var dist:=Vector2(p.x-orbit.pivot.x,p.z-orbit.pivot.z).length_squared()
+			if people.modes[i]!=3: dist+=900
+			if dist<nearest:
+				nearest=dist
+				next_id=people.ids[i]
+		if next_id>=0: selected=next_id
+	if selected>=0: _watch(selected)
+
+func _watch(id:int) -> void:
+	selected=id
+	watching=true
+	orbit.following=false
+	orbit.extent=28
+	var r:Dictionary=model.resident(id,remainder)
+	orbit.pivot=r.position+Vector3.UP
+	orbit.update_view()
+
+func _unhandled_input(event:InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
+		if event.pressed: click_start=event.position
+		elif click_start.distance_to(event.position)<4. and not event.shift_pressed:
+			var id:=people.pick(orbit,event.position,town.sites)
+			if id>=0: _watch(id)
+	if event is InputEventMouseMotion and event.button_mask and event.position.distance_to(click_start)>4:
+		watching=false
+	if event is InputEventPanGesture: watching=false
+
 
 func _select_speed(value:int) -> void:
 	if value==0 and speed==0: value=last_speed
 	if value>0: last_speed=value
 	speed=value
 	hud.display(state,speed,orbit.azimuth)
-	hud.sync_map(model,state.roads)
+	hud.sync_map(model,state.roads,state.buildings)
 
 func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_H: _fit_city()
+			KEY_V: _street_view()
 			KEY_SPACE: _select_speed(0)
 			KEY_1: _select_speed(1)
 			KEY_2: _select_speed(10)

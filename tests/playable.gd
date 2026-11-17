@@ -18,6 +18,28 @@ func key(code: Key) -> void:
 	event.pressed = false
 	root.push_input(event)
 
+func check_pedestrian_click(world) -> void:
+	var view: Rect2 = root.get_visible_rect()
+	var clear_area := Rect2(view.size * Vector2(.35,.22), view.size * Vector2(.40,.50))
+	for i in world.people.ids.size():
+		if world.people.modes[i] != 3: continue
+		var pose: Vector4 = world.people.poses[i]
+		var screen: Vector2 = world.orbit.unproject_position(Vector3(pose.x, pose.y+1.05, pose.z))
+		if not clear_area.has_point(screen): continue
+		var id: int = world.people.ids[i]
+		if world.people.pick(world.orbit, screen, world.town.sites) != id: continue
+		var click := InputEventMouseButton.new()
+		click.position = screen
+		click.button_index = MOUSE_BUTTON_LEFT
+		click.pressed = true
+		root.push_input(click, true)
+		click.pressed = false
+		root.push_input(click, true)
+		check(world.watching and world.selected == id, "Click did not follow the visible pedestrian")
+		world._street_view()
+		return
+	check(false, "No visible commuter in the opening market street")
+
 func run() -> void:
 	var world = load("res://main.tscn").instantiate()
 	root.add_child(world)
@@ -28,6 +50,7 @@ func run() -> void:
 	key(KEY_SPACE)
 	world._process(2.0)
 	check(world.state.tick==initial.tick and world.speed==0,"Pause changed simulation time")
+	check_pedestrian_click(world)
 	for i in range(1,5):
 		world.hud.buttons[i].pressed.emit()
 		var before:int=world.state.tick
@@ -70,11 +93,22 @@ func run() -> void:
 	check(was_open!=world.hud.map_open,"Street plan toggle failed")
 	var small_extent:float=world.orbit.size
 	key(KEY_4)
-	world._process(1.6)
+	world._process(60.)
 	world.orbit.home()
 	check(world.orbit.size>small_extent,"Camera did not expand with the city")
 	check(world.town.sites.size()==world.state.buildings,"Redevelopment duplicated a parcel")
 	check(world.town.renewals==world.state.renewals,"Redevelopment did not reach the scene")
 	check(world.town.cars.size()==world.model.traffic(0).size(),"Traffic population did not reach the scene")
+	world.hud.district_requested.emit(2)
+	check(world.hud.district_title=="Workshop district" and not world.orbit.following,"Workshop district focus failed")
+	world.hud.district_requested.emit(1)
+	world._sync()
+	world.hud.meet_button.pressed.emit()
+	world._sync()
+	check(world.selected>=0 and world.watching,"Resident inspection failed")
+	var person:Dictionary=world.model.resident(world.selected,0)
+	check(person.home>=0 and world.hud.identity.text.contains("#"),"Resident address or identity missing")
+	world.hud.reset_button.pressed.emit()
+	check(not world.watching and world.orbit.following,"Fit city did not leave resident view")
 	print("Playable checks completed with ",failures," failures.")
 	quit(1 if failures else 0)

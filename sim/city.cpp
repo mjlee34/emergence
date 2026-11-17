@@ -8,7 +8,7 @@
 
 namespace city {
 namespace {
-constexpr int build_time = 24;
+constexpr int build_time = construction_ticks;
 struct District {
   int col, row, threshold;
 };
@@ -79,6 +79,9 @@ City::City(uint32_t seed) : seed_(seed), random_(seed) {
     for (int e = 0; e < int(roads_.size()); ++e)
       develop(e, true);
   population_ = capacity_ * 95 / 100;
+  for (int i = 0; i < int(buildings_.size()); ++i)
+    life_.open(*this, i, buildings_[i].capacity);
+  life_.settle(*this);
   for (int i = 0; i < 22; ++i)
     spawn_vehicle();
   record("Settlement established");
@@ -268,14 +271,23 @@ bool City::develop(int e, bool initial) {
       continue;
     int style = int(draw() >> 8) % 997;
     bool east = p.x > river_center(p.z) + 20;
-    Use use = east && p.z > 0 && style % 3 != 0                 ? Use::Works
-              : road.type != RoadClass::Local && style % 3 == 0 ? Use::Shops
-                                                                : Use::Housing;
+    const bool yard = (p.x < -70 && p.z > 10 && p.z < 65) || (east && p.z > 0);
+    const bool high_street =
+        road.type == RoadClass::Arterial ||
+        (road.type == RoadClass::Collector && std::abs(p.x + 30) < 54);
+    Use use = yard && style % 5 != 0          ? Use::Works
+              : high_street && style % 4 != 0 ? Use::Shops
+                                              : Use::Housing;
+    // Hiring pressure attracts employers to collector frontage within mixed-use
+    // districts.
+    if (!initial && use == Use::Housing && life_.workforce() > life_.jobs() &&
+        road.type != RoadClass::Local && style % 3 != 0)
+      use = yard ? Use::Works : Use::Shops;
     Building lot{
         p, -std::atan2(dz, dx), style, 0, initial ? -build_time : tick_, use, e,
         1};
     lot.floors = target_floors(lot);
-    lot.capacity = use == Use::Housing ? 13 * lot.floors + style % 12 + 6 : 0;
+    lot.capacity = use == Use::Housing ? 17 * lot.floors + style % 12 + 12 : 0;
     buildings_.push_back(lot);
     bounds_[0] = std::min(bounds_[0], p.x);
     bounds_[1] = std::min(bounds_[1], p.z);
@@ -284,7 +296,8 @@ bool City::develop(int e, bool initial) {
     if (initial)
       capacity_ += lot.capacity;
     else {
-      completions_.push_back({tick_ + build_time, lot.capacity});
+      completions_.push_back(
+          {tick_ + build_time, int(buildings_.size() - 1), lot.capacity});
       record(use == Use::Housing ? "Housing construction began"
              : use == Use::Shops ? "Market construction began"
                                  : "Workshop construction began");
@@ -325,11 +338,11 @@ bool City::redevelop() {
     return false;
   auto &b = buildings_[chosen];
   int floors = target_floors(b);
-  int gain = b.use == Use::Housing ? 13 * (floors - b.floors) : 0;
+  int gain = b.use == Use::Housing ? 17 * (floors - b.floors) : 0;
   b.floors = floors;
   b.capacity += gain;
   b.started = tick_;
-  completions_.push_back({tick_ + build_time, gain});
+  completions_.push_back({tick_ + build_time, chosen, gain});
   renewals_.push_back(chosen);
   record("Downtown block redeveloped");
   return true;
@@ -398,26 +411,34 @@ Point City::vehicle_position(const Vehicle &v, double &yaw,
 void City::advance(int ticks) {
   for (int i = 0; i < ticks; ++i) {
     ++tick_;
-    while (!completions_.empty() && completions_.front().first <= tick_) {
-      capacity_ += completions_.front().second;
+    while (!completions_.empty() && completions_.front().tick <= tick_) {
+      auto project = completions_.front();
+      capacity_ += project.beds;
+      life_.open(*this, project.lot, project.beds);
       completions_.pop_front();
     }
-    if (tick_ % 4 == 0 && population_ < capacity_)
+    const int plan = tick_ / planning_interval;
+    if (tick_ % (4 * planning_interval) == 0 && population_ < capacity_)
       population_ += std::min(capacity_ - population_,
                               4 + population_ / 250 + int(draw() % 5));
-    if (tick_ % 12 == 0 && population_ * 100 >= capacity_ * 82 &&
-        tick_ >= vacant_ticks_) {
-      if (tick_ % 48 == 12)
+    life_.settle(*this);
+    if ((tick_ + opening_minute * ticks_per_minute) %
+            (minutes_per_day * ticks_per_minute) ==
+        0)
+      life_.hire_waiting(*this);
+    if (tick_ % (12 * planning_interval) == 0 &&
+        population_ * 100 >= capacity_ * 82 && tick_ >= vacant_ticks_) {
+      if (plan % 48 == 12)
         grow();
-      bool built = (tick_ % 60 == 0 && redevelop());
-      int start = (tick_ % 24 == 12) ? int(roads_.size() - 1)
-                                     : int(draw() % roads_.size());
+      bool built = (plan % 60 == 0 && redevelop());
+      int start = (plan % 24 == 12) ? int(roads_.size() - 1)
+                                    : int(draw() % roads_.size());
       for (int j = 0; j < int(roads_.size()) && !built; ++j)
         built = develop((start + j) % roads_.size(), false);
       if (!built && !grow() && !redevelop())
-        vacant_ticks_ = tick_ + 192;
+        vacant_ticks_ = tick_ + 192 * planning_interval;
     }
-    if (tick_ % 96 == 0 &&
+    if (tick_ % (96 * planning_interval) == 0 &&
         int(vehicles_.size()) < std::min(115, 22 + population_ / 190))
       spawn_vehicle();
     for (auto &v : vehicles_) {
@@ -447,6 +468,7 @@ uint64_t City::digest() const {
     h ^= value;
     h *= 1099511628211ULL;
   };
+  mix(life_.digest());
   mix(seed_);
   mix(random_);
   mix(tick_);

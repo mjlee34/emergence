@@ -1,5 +1,6 @@
 #pragma once
 #include "geo/terrain.hpp"
+#include "sim/life.hpp"
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -8,6 +9,8 @@
 #include <utility>
 #include <vector>
 namespace city {
+constexpr int planning_interval = 60;
+constexpr int construction_ticks = 24 * planning_interval;
 struct Junction {
   int col, row;
   Point pos;
@@ -50,6 +53,7 @@ public:
   int population() const { return population_; }
   uint32_t seed() const { return seed_; }
   int capacity() const { return capacity_; }
+  const Life &life() const { return life_; }
   const auto &nodes() const { return nodes_; }
   const auto &roads() const { return roads_; }
   const auto &buildings() const { return buildings_; }
@@ -71,7 +75,11 @@ private:
   std::vector<Event> events_;
   std::map<std::pair<int, int>, int> node_index_;
   std::vector<int> renewals_;
-  std::deque<std::pair<int, int>> completions_;
+  struct Completion {
+    int tick, lot, beds;
+  };
+  std::deque<Completion> completions_;
+  Life life_;
   std::array<double, 4> bounds_{-30, 6, -30, 6};
   void spawn_vehicle();
   bool redevelop();

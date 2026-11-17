@@ -1,6 +1,12 @@
 extends Control
 signal speed_selected(value: int)
 signal home_requested
+signal street_requested
+signal meet_requested
+signal district_requested(use:int)
+var district_title:=""
+var journey:=PackedVector2Array()
+var last_leg:=Vector2i(-1,-1)
 const IVORY=Color("#f6efdb")
 const MUTED=Color("#bccac1")
 const GOLD=Color("#f3c774")
@@ -22,6 +28,15 @@ var entry:Label
 var reset_button:=Button.new()
 var map_button:=Button.new()
 var map_open:=true
+var street_button:=Button.new()
+var meet_button:=Button.new()
+var life_panel:=PanelContainer.new()
+var occupancy:=Label.new()
+var identity:=Label.new()
+var routine_label:=Label.new()
+var land_dots:=PackedVector2Array()
+var land_uses:=PackedInt32Array()
+const USE_COLORS=[Color("#acd49e"),Color("#f5c076"),Color("#b6a3d9")]
 var map_paths:Array[PackedVector2Array]=[]
 var map_ranks:=PackedInt32Array()
 var river:=PackedVector2Array()
@@ -50,19 +65,48 @@ func _ready() -> void:
 	_style_button(reset_button,false)
 	add_child(reset_button)
 	reset_button.pressed.connect(func(): home_requested.emit())
-	map_button.text="Street plan  ▴"
+	map_button.text="Districts  ▴"
 	_style_button(map_button,false)
 	add_child(map_button)
 	map_button.pressed.connect(func():
 		map_open=not map_open
-		map_button.text="Street plan  ▴" if map_open else "Street plan  ▾"
+		map_button.text="Districts  ▴" if map_open else "Street plan  ▾"
 		queue_redraw())
+	street_button.text="Street view"
+	street_button.tooltip_text="Observe the market streets (V)"
+	_style_button(street_button,false)
+	add_child(street_button)
+	street_button.pressed.connect(func(): street_requested.emit())
+	life_panel.add_theme_stylebox_override("panel",_box(Color("#182c29f5"),8,Color("#62756a"),1))
+	add_child(life_panel)
+	var info:=VBoxContainer.new()
+	info.add_theme_constant_override("separation",5)
+	life_panel.add_child(info)
+	_font(occupancy,sans,14,MUTED)
+	_font(identity,serif,26,IVORY)
+	_font(routine_label,sans,15,IVORY)
+	info.add_child(identity)
+	info.add_child(routine_label)
+	info.add_child(occupancy)
+	var districts:=HBoxContainer.new()
+	info.add_child(districts)
+	for i in 3:
+		var b:=Button.new()
+		b.text=["Homes","Markets","Works"][i]
+		_style_button(b,false)
+		b.tooltip_text="Visit a "+["residential street","shopping street","workshop yard"][i]
+		b.pressed.connect(func(): district_requested.emit(i))
+		districts.add_child(b)
+	meet_button.text="Meet a resident"
+	_style_button(meet_button,false)
+	info.add_child(meet_button)
+	meet_button.pressed.connect(func(): meet_requested.emit())
 	dock.add_theme_stylebox_override("panel",_box(INK.darkened(.16),10,Color("#587066"),1))
 	add_child(dock)
 	var row:=HBoxContainer.new()
 	row.add_theme_constant_override("separation",18)
 	dock.add_child(row)
-	var date_column:=_metric(row,"SIMULATION DAY")
+	var date_column:=_metric(row,"LOCAL TIME")
 	day=date_column
 	population=_metric(row,"RESIDENTS")
 	roads=_metric(row,"STREETS")
@@ -139,14 +183,52 @@ func _layout() -> void:
 	live.size.x=134
 	reset_button.position=Vector2(size.x-reset_button.get_combined_minimum_size().x-35,66)
 	map_button.position=Vector2(reset_button.position.x-map_button.get_combined_minimum_size().x-7,66)
+	street_button.position=Vector2(map_button.position.x-street_button.get_combined_minimum_size().x-7,66)
+	life_panel.position=Vector2(34,size.y-345)
 	queue_redraw()
+
+func show_life(data:Dictionary,resident:Dictionary,model) -> void:
+	occupancy.text="%s working    %s shopping    %s walking" % [grouped(data.at_work),grouped(data.shopping),grouped(data.walking)]
+	if resident.is_empty():
+		identity.text="Street life" if district_title=="" else district_title
+		routine_label.text="Click a person to follow their day.\n%s employed  ·  %s jobs open" % [grouped(data.employed),grouped(data.jobs-data.employed)]
+		journey.clear()
+		last_leg=Vector2i(-1,-1)
+	else:
+		var v:int=resident.variation
+		var given:=["Mina","Theo","Iris","Leon","Ari","Ella","Milo","Ren","Nora","Emil","Sam","Lina","Alex","Noa","Rae","Kai"]
+		var family:=["Park","Reed","Chen","Hill","Baek","Ford","Kim","Bell","Tan","Cole","Shaw","Ito","Yu","Moon","West","Gray"]
+		identity.text="%s %s  ·  #%d"%[given[v%16],family[(v>>8)%16],resident.id+1]
+		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to"][resident.activity]
+		var workplace:="Seeking work" if resident.seeking else "Outside workforce"
+		if resident.work>=0:
+			workplace="%s  (%s–%s)"%[_address(model,resident.work),_time(resident.shift),_time(resident.finish)]
+		routine_label.text="%s %s\nHome   %s\nWork    %s"%[activity,_address(model,resident.target),_address(model,resident.home),workplace]
+		var leg:=Vector2i(resident.id,resident.target)
+		if last_leg!=leg:
+			last_leg=leg
+			journey=model.walking_plan(resident.id,0.)
+			queue_redraw()
+	life_panel.reset_size()
+
+func _address(model,id:int) -> String:
+	var b:Dictionary=model.lot(id)
+	var title: String
+	match int(b.use):
+		0: title="Residence"
+		1: title=["Bakery","Corner café","Grocer","Bookshop"][b.style%4]
+		_: title=["Foundry","Joinery","Printworks","Textile mill"][b.style%4]
+	return "%s %02d"%[title,id+1]
+
+func _time(minute:int) -> String:
+	return "%02d:%02d"%[int(minute/60),minute%60]
 
 func display(data:Dictionary,multiplier:int,angle:float) -> void:
 	if state!=data:
-		day.text="%03d"%(1+int(data.tick/96))
+		day.text="%02d:%02d" % [int(data.minute/60),data.minute%60]
 		population.text=grouped(data.population)
 		roads.text=str(data.roads)
-		entry.text=data.event
+		entry.text="Day %d   ·   %s"%[data.day,data.event]
 		state=data
 	if speed!=multiplier or live.text=="":
 		speed=multiplier
@@ -182,8 +264,12 @@ func _draw() -> void:
 	draw_string(sans,Vector2(size.x-297,size.y-23),"Drag to orbit   ·   Shift-drag to pan   ·   Scroll to zoom",HORIZONTAL_ALIGNMENT_LEFT,-1,11,MUTED)
 
 
-func sync_map(sim,count:int) -> void:
-	if map_paths.size()==count: return
+func sync_map(sim,count:int,buildings:int) -> void:
+	if map_paths.size()==count and land_dots.size()==buildings: return
+	while land_dots.size()<buildings:
+		var b:Dictionary=sim.lot(land_dots.size())
+		land_dots.append(Vector2(b.pos.x,b.pos.z))
+		land_uses.append(b.use)
 	if river.is_empty():
 		for z in range(-320,321,8):
 			river.append(Vector2(sim.river_x(z),z))
@@ -198,18 +284,35 @@ func sync_map(sim,count:int) -> void:
 func _draw_plan() -> void:
 	var panel:=Rect2(size.x-301,111,266,204)
 	draw_rect(panel,Color("#182b29ef"))
-	var origin:=panel.position+Vector2(133,88)
-	var scale_factor:=.247
+	if state.is_empty(): return
+	var bounds:Vector4=state.bounds
+	var focus:=Vector2((bounds.x+bounds.z)*.5,(bounds.y+bounds.w)*.5)
+	var scale_factor:=minf(235./maxf(100,bounds.z-bounds.x+28),144./maxf(70,bounds.w-bounds.y+28))
+	var origin:=panel.position+Vector2(133,83)-focus*scale_factor
+	var plot:=Rect2(panel.position+Vector2(5,5),Vector2(256,155))
+	for i in range(1,river.size()):
+		var a:=origin+river[i-1]*scale_factor
+		var b:=origin+river[i]*scale_factor
+		if plot.has_point(a) and plot.has_point(b): draw_line(a,b,Color("#426b70"),maxf(2,16*scale_factor),true)
 	draw_set_transform(origin,0,Vector2.ONE*scale_factor)
-	if river.size()>1: draw_polyline(river,Color("#426b70"),24.,true)
 	for rank in 3:
 		for i in map_paths.size():
 			if map_ranks[i]==rank:
-				draw_polyline(map_paths[i],ROUTE_COLORS[rank],[2.4,4.9,8.2][rank],true)
+				draw_polyline(map_paths[i],ROUTE_COLORS[rank],[.75,1.15,2.0][rank]/scale_factor,true)
+	for i in land_dots.size():
+		draw_circle(land_dots[i],clampf(3.5*scale_factor,1.1,2.7)/scale_factor,USE_COLORS[land_uses[i]])
+	if journey.size()>1:
+		draw_polyline(journey,Color("#fff0bc"),2.2/scale_factor,true)
+		draw_circle(journey[0],3.5/scale_factor,IVORY)
+		draw_circle(journey[-1],3.5/scale_factor,GOLD)
 	draw_set_transform(Vector2.ZERO)
-	var y:=panel.end.y-15
+	var y:=panel.end.y-28
 	var x:=panel.position.x+12
 	for rank in [2,1,0]:
 		draw_line(Vector2(x,y-4),Vector2(x+12,y-4),ROUTE_COLORS[rank],rank+1.5,true)
 		draw_string(sans,Vector2(x+16,y),["Local","Collector","Arterial"][rank],HORIZONTAL_ALIGNMENT_LEFT,-1,13,IVORY)
 		x+=85
+	for rank in 3:
+		var dot:=panel.position+Vector2(13+rank*87,panel.size.y-11)
+		draw_circle(dot,3.3,USE_COLORS[rank])
+		draw_string(sans,dot+Vector2(7,4),["Housing","Commerce","Industry"][rank],HORIZONTAL_ALIGNMENT_LEFT,-1,12,IVORY)
