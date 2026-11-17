@@ -1,16 +1,17 @@
 shader_type spatial;
-render_mode cull_disabled;
-varying vec2 location;
-void vertex(){ location=VERTEX.xz; }
+varying vec2 loc;
+void vertex(){loc=VERTEX.xz;}
 void fragment(){
-	float x=location.x, z=location.y;
-	float center=94.0+29.0*sin(z*.021+.4)-.18*z;
-	float bank=abs(x-center);
-	float sparkle=sin(z*1.7+x*.2+sin(x*.46+z*.13)*1.7+TIME*.9);
-	float fleck=smoothstep(.94,.997,sparkle)*smoothstep(.58,.96,sin(x*.75+z*.31+sin(z*.4)));
-	vec3 deep=vec3(.047,.258,.29);
-	vec3 shallows=vec3(.23,.50,.46);
-	ALBEDO=mix(deep,shallows,smoothstep(8.,22.,bank)) + vec3(.22,.27,.22)*fleck*.56;
-	ROUGHNESS=.44;
-	SPECULAR=.32;
+	float bank=abs(loc.x-(94.+29.*sin(loc.y*.021+.4)-.18*loc.y));
+	vec2 p=loc;
+	float crosswind=sin(dot(p,vec2(.55,.29))+TIME*.71);
+	float wave=sin(dot(p,vec2(2.31,.84))+crosswind*1.4-TIME*1.16);
+	float ripple=sin(dot(p,vec2(-.71,2.83))+wave*.6+TIME*.84);
+	wave*=1.-smoothstep(.18,1.4,length(fwidth(p)));
+	ripple*=1.-smoothstep(.15,1.1,length(fwidth(p)));
+	NORMAL=normalize(NORMAL+mat3(VIEW_MATRIX)*vec3(wave*.042,0.,ripple*.033));
+	ALBEDO=mix(vec3(.025,.068,.075),vec3(.075,.114,.088),smoothstep(8.,22.,bank));
+	ROUGHNESS=.21+.045*crosswind;
+	METALLIC=.25;
+	SPECULAR=.83;
 }

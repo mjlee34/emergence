@@ -1,13 +1,30 @@
 extends RefCounted
-## Flat-shaded miniature geometry. Winding is selected from the requested outward direction.
+## Procedural geometry with metre-scaled surface coordinates. Winding is selected from the requested outward direction.
 var surface := SurfaceTool.new()
-var material := StandardMaterial3D.new()
+enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP }
+var finish:=Finish.PLAIN
+var detailed:bool
+var material:Material
+static var built_material:ShaderMaterial
+static var plain_material:StandardMaterial3D
 
-func _init() -> void:
+func _init(with_surfaces:=false) -> void:
+	detailed=with_surfaces
 	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
-	material.vertex_color_use_as_albedo = true
-	material.vertex_color_is_srgb = false
-	material.roughness = 0.91
+	if detailed:
+		if not built_material:
+			built_material=ShaderMaterial.new()
+			built_material.shader=preload("res://scripts/surfaces.gdshader")
+			for key in ["road","walk","brick","slate","meadow"]:
+				built_material.set_shader_parameter(key,load("res://art/"+key+".jpg"))
+				built_material.set_shader_parameter(key+"_surface",load("res://art/"+key+"_surface.png"))
+		material=built_material
+	else:
+		if not plain_material:
+			plain_material=StandardMaterial3D.new()
+			plain_material.vertex_color_use_as_albedo=true
+			plain_material.roughness=.78
+		material=plain_material
 
 func triangle(a: Vector3, b: Vector3, c: Vector3, color: Color, outward: Vector3) -> void:
 	var normal := (c-a).cross(b-a).normalized()
@@ -18,8 +35,21 @@ func triangle(a: Vector3, b: Vector3, c: Vector3, color: Color, outward: Vector3
 		normal = -normal
 	surface.set_normal(normal)
 	surface.set_color(color.srgb_to_linear())
-	for p in [a,b,c]:
-		surface.add_vertex(p)
+	if detailed:
+		var n:=normal.abs()
+		var top:=n.y>n.x and n.y>n.z
+		var axis:=Vector3.RIGHT if top or n.z>=n.x else Vector3.BACK
+		var tangent:Vector3=(axis-normal*normal.dot(axis)).normalized()
+		var down:=Vector3.BACK if top else Vector3.DOWN
+		var v:=normal.cross(tangent)
+		var sign_v:float=signf(v.dot(down))
+		surface.set_tangent(Plane(tangent,sign_v))
+		surface.set_uv2(Vector2(finish,0))
+		for p:Vector3 in [a,b,c]:
+			surface.set_uv(Vector2(p.dot(axis),p.z if top else -p.y))
+			surface.add_vertex(p)
+	else:
+		for p in [a,b,c]: surface.add_vertex(p)
 
 func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, color: Color, outward: Vector3) -> void:
 	triangle(a,b,c,color,outward)
@@ -46,6 +76,39 @@ func taper(base: Vector3, low: float, high: float, height: float, sides: int, co
 		if high>0:
 			triangle(base+b*low,top+b*high,top+a*high,color,a+b)
 			triangle(top,top+b*high,top+a*high,color,Vector3.UP)
+
+## Elliptical rings for clothing, bodies and other rounded small props.
+func profile(center:Vector3,rings:Array,color:Color,sides:=10) -> void:
+	for i in range(rings.size()-1):
+		var lower:Vector3=rings[i]
+		var upper:Vector3=rings[i+1]
+		for j in sides:
+			var a:=TAU*j/sides
+			var b:=TAU*(j+1)/sides
+			var u:=Vector3(cos(a),0,sin(a))
+			var v:=Vector3(cos(b),0,sin(b))
+			var low:=center+Vector3.UP*lower.y
+			var high:=center+Vector3.UP*upper.y
+			quad(low+u*Vector3(lower.x,0,lower.z),low+v*Vector3(lower.x,0,lower.z),
+				high+v*Vector3(upper.x,0,upper.z),high+u*Vector3(upper.x,0,upper.z),color,u+v)
+	var last:Vector3=rings[-1]
+	var top:=center+Vector3.UP*last.y
+	for j in sides:
+		var a:=TAU*j/sides
+		var b:=TAU*(j+1)/sides
+		triangle(top,top+Vector3(last.x*cos(a),0,last.z*sin(a)),top+Vector3(last.x*cos(b),0,last.z*sin(b)),color,Vector3.UP)
+
+func wheel(center:Vector3,radius:float,side:int) -> void:
+	var axis:=Vector3.BACK*side
+	for j in 12:
+		var a:=TAU*j/12
+		var b:=TAU*(j+1)/12
+		var u:=Vector3(cos(a),sin(a),0)*radius
+		var v:=Vector3(cos(b),sin(b),0)*radius
+		quad(center+u-axis*.10,center+v-axis*.10,center+v+axis*.10,center+u+axis*.10,Color("#282b2a"),u+v)
+		var face:=center+axis*.10
+		quad(face+u,face+v,face+v*.55,face+u*.55,Color("#252828"),axis)
+		triangle(face,face+u*.55,face+v*.55,Color("#888e8e") if j%2 else Color("#596268"),axis)
 
 func mesh() -> ArrayMesh:
 	surface.set_material(material)

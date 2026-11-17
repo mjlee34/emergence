@@ -42,6 +42,7 @@ func _ready() -> void:
 		if arg.begins_with("--seed="): seed_value=int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--capture="): capture_path=arg.trim_prefix("--capture=")
 		if arg.begins_with("--at="): capture_tick=maxi(0,int(arg.trim_prefix("--at=")))
+		if arg=="--no-hud": hud.visible=false
 		if arg=="--freight": capture_freight=true
 		if arg.begins_with("--counter="): capture_counter=int(arg.trim_prefix("--counter="))
 		if arg=="--street": street_capture=true
@@ -105,38 +106,43 @@ func _ready() -> void:
 
 func _lighting() -> void:
 	var env:=atmosphere
-	env.background_mode=Environment.BG_COLOR
+	env.background_mode=Environment.BG_SKY
+	var sky_model:=ProceduralSkyMaterial.new()
+	sky_model.sky_top_color=Color("#688aaa")
+	sky_model.sky_horizon_color=Color("#c2cbd0")
+	sky_model.ground_horizon_color=Color("#b6bfbd")
+	sky_model.ground_bottom_color=Color("#697369")
+	sky_model.sun_angle_max=9.
+	env.sky=Sky.new()
+	env.sky.sky_material=sky_model
+	env.fog_enabled=true
+	env.fog_density=.000105
+	env.fog_light_color=Color("#bec9cb")
+	env.fog_sky_affect=.32
 	env.background_color=Color("#294240")
 	env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color=Color("#c9d9df")
 	env.ambient_light_energy=.34
-	env.reflected_light_source=Environment.REFLECTION_SOURCE_DISABLED
+	env.reflected_light_source=Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode=Environment.TONE_MAPPER_ACES
 	env.ssao_enabled=true
-	env.ssao_radius=2.2
+	env.ssao_radius=1.6
 	env.ssao_intensity=1.6
 	var environment:=WorldEnvironment.new()
 	environment.environment=env
 	add_child(environment)
 	var sun:=light
-	sun.light_color=Color("#fff0d5")
+	sun.light_color=Color("#fff3e3")
 	sun.light_energy=1.15
 	sun.shadow_enabled=true
 	sun.directional_shadow_max_distance=900
-	sun.directional_shadow_mode=DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_mode=DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_blend_splits=true
+	sun.shadow_bias=.035
+	sun.shadow_normal_bias=.85
 	sun.rotation_degrees=Vector3(-37,-133,0)
+	sun.light_angular_distance=.35
 	add_child(sun)
-	var floor_node:=MeshInstance3D.new()
-	var floor_mesh:=PlaneMesh.new()
-	floor_mesh.size=Vector2(4000,4000)
-	floor_node.mesh=floor_mesh
-	var mat:=StandardMaterial3D.new()
-	mat.albedo_color=Color("#192c2d")
-	mat.roughness=1.
-	floor_node.material_override=mat
-	floor_node.position.y=-10.76
-	add_child(floor_node)
-
 func _process(delta:float) -> void:
 	remainder+=delta*TICKS_PER_SECOND*speed
 	var ticks:=int(remainder)
@@ -176,9 +182,15 @@ func _sync() -> void:
 	hud.show_trade(model,model.business(business_id),run,manifests.size(),state.tick)
 	var sun_height:=sin((state.minute-360.)/1440.*TAU)
 	var daylight:=smoothstep(-.08,.38,sun_height)
-	light.light_energy=lerpf(.19,1.15,daylight)
-	light.light_color=Color("#a5c2df").lerp(Color("#fff0d5"),daylight)
-	atmosphere.ambient_light_energy=lerpf(.29,.35,daylight)
+	light.light_energy=lerpf(.12,1.02,daylight)
+	light.rotation_degrees=Vector3(-lerpf(16.,57.,maxf(0.,sun_height)),-118.+(state.minute-465)*.135,0)
+	light.directional_shadow_max_distance=clampf(orbit.extent*2.8,95.,1700.)
+	atmosphere.fog_light_energy=lerpf(.06,.80,daylight)
+	atmosphere.background_energy_multiplier=lerpf(.08,.80,daylight)
+	if town.Forms.built_material: town.Forms.built_material.set_shader_parameter("night",1.-daylight)
+	light.light_color=Color("#a5c2df").lerp(Color("#fff3e3"),daylight)
+	atmosphere.ambient_light_color=Color("#cbd5df")
+	atmosphere.ambient_light_energy=lerpf(.20,.58,daylight)
 
 func _follow_delivery() -> void:
 	if manifests.is_empty(): return

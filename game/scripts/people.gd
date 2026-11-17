@@ -1,6 +1,6 @@
 extends Node3D
 const Forms=preload("res://scripts/forms.gd")
-const COATS=["#d86a47","#558caf","#d7b54d","#70885b","#e4d4b8","#995b70","#61a8a1","#cb915b"]
+const COATS=["#935d50","#546877","#ac9361","#596c59","#b6afa0","#6b535e","#597478","#886c57"]
 var groups:Array[MultiMesh]=[]
 var paint:=ShaderMaterial.new()
 var ids:=PackedInt32Array()
@@ -18,17 +18,18 @@ func _ready() -> void:
 		var skin:=Color(["#e3b892","#b88564","#805b49","#c99770"][i%4])
 		var trousers:=Color(["#394d59","#514d49","#485775"][i%3])
 		for side in [-1,1]:
-			g.box(Vector3(side*.12,.45,0),Vector3(.18,.70,.22),trousers)
-			g.box(Vector3(side*.12,.12,.055),Vector3(.2,.19,.33),Color("#594f45"))
-			g.box(Vector3(side*.29,1.18,0),Vector3(.14,.42,.17),coat)
-			g.box(Vector3(side*.29,.91,0),Vector3(.13,.18,.15),skin)
-		g.box(Vector3(0,1.12,0),Vector3(.47,.71,.3),coat)
-		g.taper(Vector3(0,1.48,0),.19,.205,.33,8,skin)
-		g.taper(Vector3(0,1.76,-.02),.217,.17,.13,8,Color("#675547") if i%3 else Color("#493e38"))
+			var leg:=Vector3(side*.105,0,0)
+			g.profile(leg,[Vector3(.068,.10,.08),Vector3(.077,.44,.083),Vector3(.11,.80,.12),Vector3(.11,.91,.13)],trousers,8)
+			g.profile(leg+Vector3(0,0,.046),[Vector3(.083,.025,.145),Vector3(.087,.088,.15),Vector3(.065,.16,.093)],Color("#46413c"),8)
+			var arm:=Vector3(side*.235,0,0)
+			g.profile(arm,[Vector3(.048,.87,.064),Vector3(.068,1.09,.078),Vector3(.086,1.36,.093),Vector3(.043,1.43,.07)],coat,8)
+			g.profile(arm,[Vector3(.036,.77,.04),Vector3(.053,.815,.056),Vector3(.047,.89,.05)],skin,8)
+		g.profile(Vector3.ZERO,[Vector3(.190,.78,.136),Vector3(.204,.91,.146),Vector3(.164,1.06,.127),Vector3(.22,1.31,.15),Vector3(.196,1.41,.113),Vector3(.074,1.46,.085)],coat)
+		g.profile(Vector3.ZERO,[Vector3(.06,1.41,.065),Vector3(.06,1.50,.066),Vector3(.086,1.515,.087),Vector3(.112,1.61,.103),Vector3(.118,1.71,.11),Vector3(.081,1.765,.085)],skin)
+		g.profile(Vector3(0,0,-.012),[Vector3(.117,1.65,.106),Vector3(.12,1.71,.11),Vector3(.096,1.757,.093),Vector3(.047,1.779,.05)],Color("#53453a") if i%3 else Color("#37322d"))
 		if i%3==1:
-			g.box(Vector3(0,1.80,.08),Vector3(.44,.11,.48),coat)
-		if i%2==0:
-			g.box(Vector3(0,1.17,-.225),Vector3(.29,.4,.14),Color("#746449"))
+			g.profile(Vector3.ZERO,[Vector3(.132,1.71,.14),Vector3(.113,1.742,.115),Vector3(.073,1.785,.083)],coat)
+		if i%3==0: g.profile(Vector3(0,0,-.145),[Vector3(.104,.97,.072),Vector3(.14,1.05,.089),Vector3(.13,1.30,.08),Vector3(.088,1.34,.06)],Color("#695c4a"))
 		var batch:=MultiMesh.new()
 		batch.transform_format=MultiMesh.TRANSFORM_3D
 		batch.use_custom_data=true

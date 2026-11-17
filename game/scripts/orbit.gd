@@ -9,14 +9,15 @@ var orbiting:=false
 var panning:=false
 
 func _ready() -> void:
-	projection=Camera3D.PROJECTION_ORTHOGONAL
-	near=.5
-	far=1500
+	projection=Camera3D.PROJECTION_PERSPECTIVE
+	fov=38.
+	near=.20
+	far=4200
 	update_view()
 
 func update_view() -> void:
 	size=extent
-	position=pivot+Vector3(sin(azimuth)*cos(elevation),sin(elevation),cos(azimuth)*cos(elevation))*565
+	position=pivot+Vector3(sin(azimuth)*cos(elevation),sin(elevation),cos(azimuth)*cos(elevation))*(extent*.5/tan(deg_to_rad(fov)*.5))
 	look_at(pivot,Vector3.UP)
 
 func frame_city(bounds:Vector4,weight:float) -> void:

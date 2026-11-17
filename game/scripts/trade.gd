@@ -23,8 +23,7 @@ func _ready() -> void:
 		g.box(Vector3(2.26,1.06,side*.53),Vector3(.08,.23,.35),Color("#fff1c4"))
 		g.box(Vector3(-2.22,.89,side*.7),Vector3(.08,.20,.17),Color("#ce6048"))
 		for x in [-1.34,1.47]:
-			g.box(Vector3(x,.46,side*.80),Vector3(.68,.64,.24),Color("#394443"))
-			g.box(Vector3(x,.46,side*.93),Vector3(.3,.3,.05),Color("#bebba7"))
+			g.wheel(Vector3(x,.43,side*.80),.38,side)
 	truck_mesh=g.mesh()
 	var porter=Forms.new()
 	porter.box(Vector3(-.16,.39,.14),Vector3(.22,.62,.22),Color("#3c4f59"))
