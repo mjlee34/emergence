@@ -16,7 +16,7 @@ The original Alder Reach fixture opens at 07:45. On the market street, commuters
 
 Open `dist/EMERGENCE.app` after exporting. Click the map, search for a city in English or Korean, or paste latitude and longitude or a Google Maps place URL. Select **이곳에 정착** to survey the site and descend. In the city, **M** opens the map. Returning to the current city resumes play. Starting a new settlement replaces the current one.
 
-The atlas uses Natural Earth cartography and Mapzen elevations. New locations require an internet connection for their initial survey. Each survey samples a 3.36 km square on a 20 m grid around the chosen coordinate. Surface detail depends on the source DEM. The central 960 × 640 m supports urban growth. The prototype uses sites between 85° south and 85° north where the founding neighbourhood fits on dry, gently sloping ground. The water model uses sea level and mapped Natural Earth lakes. Narrow rivers, minor lakes, dikes and below-sea-level land require finer hydrography. [Geographic data credits](game/art/atlas/credits.txt)
+The atlas uses Natural Earth cartography and Mapzen elevations. New locations require an internet connection for their initial survey. Each survey samples a 3.36 km square on a 20 m grid around the chosen coordinate. Surface detail depends on the source DEM. The developable region spans up to 2,880 × 1,920 m inside the survey. The prototype uses sites between 85° south and 85° north where the founding neighbourhood fits on dry, gently sloping ground. The water model uses sea level and mapped Natural Earth lakes. Narrow rivers, minor lakes, dikes and below-sea-level land require finer hydrography. [Geographic data credits](game/art/atlas/credits.txt)
 
 ### Google Maps in the Mac app
 
@@ -72,7 +72,7 @@ The Godot runtime, dependency checkout, and build outputs stay local. The applic
 
 ## The vertical slice
 
-The fixture covers **960 × 640 metres**. Each new settlement draws a fresh seed, including repeat visits to the same coordinates. Enter a seed in the picker to replay a particular founding layout on the same terrain and build. The map location and seed appear together in the city HUD.
+The founding township covers **960 × 640 metres**. As the population grows from 30,000 to 75,000, the planner can reach progressively farther into the **2,880 × 1,920 metre** region. Terrain and travel demand determine which parts develop. Each new settlement draws a fresh seed, including repeat visits to the same coordinates. Enter a seed in the picker to replay a particular founding layout on the same terrain and build. The map location and seed appear together in the city HUD.
 
 When housing fills, the planner tallies residents’ scheduled commutes and shopping journeys at the streets serving their destinations and origins. It ranks possible links by trip volume and direction, connections, slope and access to undeveloped blocks. A busy collector can extend into an arterial. The planner surveys water crossings between dry banks. Busy frontages can attract taller buildings as the city grows. Additional capacity becomes available when construction finishes.
 
@@ -140,7 +140,7 @@ The historical lunch capture used resident #1301 at tick 1110. Current assignmen
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 10 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. The preceding fixture and geographic formats can load if replay still matches their checksum. Older landmark siting decisions can produce a different layout. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 11 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. When opening a previous checkpoint, the simulation uses its original township boundary through the saved tick, verifies its checksum and enables regional expansion on subsequent ticks. The new record stores that transition for future replays. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -162,7 +162,16 @@ ctest --test-dir build-core --output-on-failure
 ./build-core/city_profile
 ```
 
-The profiling executable advances 40,000 ticks and reports elapsed time and city size. Its measurement covers the core simulation, over approximately seven local days. Use Godot's frame profiler for rendering costs.
+By default the profiler advances 40,000 ticks. Pass increasing target ticks to measure growth intervals, city dimensions and replay checksums. To measure the playable scene, run the frame sampler with vsync disabled. It measures 60 frames after a 15-frame warm-up.
+
+```sh
+./build-core/city_profile 300000 600000 657600 1200000
+"$GODOT" --path game --resolution 1280x760 --disable-vsync --script ../tests/frame_profile.gd -- 1181800 overview 1000
+```
+
+Seed 147 reached 112,621 residents, 672 streets and 1,376 buildings at tick 1,200,000. The developed bounds spanned 1,459 × 1,235 m. In the same city at approximately 111,000 residents, an M4 Pro running Forward+ at 1280 × 760 recorded median frame times of 37 ms in the overview and 25 ms at street level at 1×. The 1000× overview measured 46 ms median and 76 ms at the 95th percentile. These are short samples from a single machine. [Regional view at 110,745 residents](captures/regional-scale.jpg)
+
+The simulation retains individual homes, jobs, wallets and travel choices. The market indexes residents by their scheduled hours, settles attendance first, then applies wages and purchases in resident order. The renderer shows up to 240 nearby private cars including the tracked driver, while bus loads cover the entire network. Distant buildings use simpler meshes. Outside the original valley, zooming in streams up to nine fine terrain tiles around the camera focus.
 
 After building the extension and importing the project, run the integration checks:
 

@@ -68,9 +68,11 @@ struct Event {
 };
 class City {
 public:
-  explicit City(uint32_t seed = 147, Site site = {});
+  explicit City(uint32_t seed = 147, Site site = {}, int township_through_tick = 0);
   const Site &site() const { return site_; }
   double height(Point p) const { return site_.height(p); }
+  Point planning_extent() const;
+  int township_through_tick() const { return township_through_tick_; }
   double street_height(const Road &road, Point p) const;
   void advance(int ticks);
   Weather weather(double fraction = 0.) const {
@@ -100,6 +102,7 @@ public:
 private:
   Site site_;
   uint32_t seed_, random_;
+  int township_through_tick_;
   double grid_angle_, grid_phase_, block_width_;
   Point workshop_site_;
   Point street_point(double column, double row) const;

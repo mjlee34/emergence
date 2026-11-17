@@ -103,7 +103,9 @@ func sync(w:Dictionary,tick:float,orbit:Camera3D) -> void:
 	mist=mist.lerp(Color("#efbd9d"),twilight*.78*(1.-cover))
 	atmosphere.fog_light_color=Color("#526783").lerp(mist,daylight)
 	atmosphere.fog_light_energy=lerpf(.18,.92,daylight)
-	atmosphere.fog_density=.00012+cover*.00036+rain*.0023
+	# A regional camera looks through kilometres of air. Keep the streets
+	# legible while retaining stronger weather at pedestrian height.
+	atmosphere.fog_density=(.00012+cover*.00036+rain*.0023)*minf(1.,210./orbit.size)
 	# The reflected sky changes slowly. Refresh once per simulated minute.
 	var sky_tick:=floori(tick/4.)
 	if sky_tick!=last_sky_tick:

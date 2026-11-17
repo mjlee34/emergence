@@ -83,8 +83,8 @@ func _shelter(stop:Dictionary,index:int) -> void:
 	var caption:="%02d   %s"%[index+1,stop.name.to_upper()]
 	_sign(node,caption,Vector3(0,2.34,.015),PI,.0036,Color.WHITE)
 
-func sync(model,town,fraction:float) -> void:
-	service=model.mobility(fraction)
+func sync(model,town,fraction:float,orbit,selected:int) -> void:
+	service=model.mobility_near(fraction,Vector2(orbit.pivot.x,orbit.pivot.z),orbit.extent*1.7+25.,selected)
 	for i in service.buses.size():
 		var row:Dictionary=service.buses[i]
 		var p:Vector4=row.pose

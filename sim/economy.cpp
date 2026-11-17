@@ -65,32 +65,61 @@ void Economy::update(const City &c) {
     order(c);
   }
 }
-void Economy::trade(const City &c) {
-  for (auto &b : places_)
-    b.staff = 0;
-  const int day =
-      (opening_minute + c.tick() / ticks_per_minute) / minutes_per_day;
-  // Attendance and purchases settle on a ten-minute clock. One receipt per
-  // visit.
-  for (int i = 0; i < c.population(); ++i) {
-    auto phase = c.life().routine(i, c.tick());
-    if (phase.activity == Activity::Work)
-      ++places_[phase.to].staff;
+void Economy::index_schedules(const City &c) {
+  const auto &life = c.life();
+  if (indexed_jobs_ != life.job_revision()) {
+    // Previously waiting residents can receive a new schedule overnight.
+    for (auto &hour : hourly_roster_) hour.clear();
+    indexed_people_ = 0;
+    indexed_jobs_ = life.job_revision();
   }
-  for (int i = 0; i < c.population(); ++i) {
-    auto phase = c.life().routine(i, c.tick());
-    auto &w = wallets_[i];
+  for (; indexed_people_ < c.population(); ++indexed_people_) {
+    const auto &r = life.people()[indexed_people_];
+    double first, last;
+    if (r.work >= 0) {
+      first = r.leave_home;
+      last = r.finish;
+    } else if (r.shop >= 0) {
+      first = 405 + r.variation % 545 + r.trips[0].duration;
+      last = r.outing_return;
+    } else {
+      continue;
+    }
+    for (int h = int(first) / 60; h <= std::min(23, int(last) / 60); ++h)
+      hourly_roster_[h].push_back(indexed_people_);
+  }
+}
+
+void Economy::trade(const City &c) {
+  index_schedules(c);
+  for (auto &b : places_) b.staff = 0;
+  const int absolute = opening_minute + c.tick() / ticks_per_minute;
+  const int day = absolute / minutes_per_day;
+  clearing_.clear();
+  for (int id : hourly_roster_[(absolute % minutes_per_day) / 60]) {
+    const auto phase = c.life().routine(id, c.tick());
     if (phase.activity == Activity::Work) {
-      auto &firm = places_[phase.to];
+      ++places_[phase.to].staff;
+      if ((c.tick() / cadence + id) % 6 == 0)
+        clearing_.push_back({id, phase.to, true});
+    } else if (phase.activity == Activity::Shopping && wallets_[id].purchase_day != day) {
+      clearing_.push_back({id, phase.to, false});
+    }
+  }
+  // Staff counts must be complete before the first shopper can be served.
+  for (const auto &order : clearing_) {
+    auto &w = wallets_[order.resident];
+    if (order.wage) {
+      auto &firm = places_[order.place];
       // Stagger hourly wage payments across staff members.
-      if ((c.tick() / cadence + i) % 6 == 0 && firm.cash >= 2) {
+      if (firm.cash >= 2) {
         firm.cash -= 2;
         firm.wages += 2;
         w.cash += 2;
         w.wages += 2;
       }
-    } else if (phase.activity == Activity::Shopping && w.purchase_day != day) {
-      auto &shop = places_[phase.to];
+    } else {
+      auto &shop = places_[order.place];
       if (!shop.staff)
         continue;
       if (shop.stock == 0 || w.cash < retail_price) {
@@ -106,7 +135,7 @@ void Economy::trade(const City &c) {
       w.spent += retail_price;
       w.purchase_day = day;
       w.receipt = c.tick();
-      w.shop = phase.to;
+      w.shop = order.place;
       shop.last_sale = c.tick();
     }
   }

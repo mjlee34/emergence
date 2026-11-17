@@ -42,6 +42,15 @@ double City::frontage_visits(int edge) const {
   return .5 * (visits(road.a) + visits(road.b));
 }
 
+Point City::planning_extent() const {
+  if (tick_ <= township_through_tick_)
+    return {township_half_width, township_half_depth};
+  // Established cities survey outward from the founding township.
+  const double expansion = std::clamp((population_ - 30000) / 45000., 0., 1.);
+  return {std::lerp(township_half_width, half_width, expansion),
+          std::lerp(township_half_depth, half_depth, expansion)};
+}
+
 bool City::grow() {
   struct Candidate {
     double score;
@@ -52,6 +61,7 @@ bool City::grow() {
   // A second project in this planning interval can start at a new junction.
   travel_demand_.resize(nodes_.size());
   const auto &demand = travel_demand_;
+  const auto [width, depth] = planning_extent();
   std::vector<Candidate> candidates;
   auto dry = [&](Point p) {
     return !site_.inland_water(p) && site_.elevation(p) > 1.8;
@@ -111,7 +121,7 @@ bool City::grow() {
         if (!water || crowded)
           continue;
       }
-      if (std::abs(p.x) > half_width - 18 || std::abs(p.z) > half_depth - 18)
+      if (std::abs(p.x) > width - 18 || std::abs(p.z) > depth - 18)
         continue;
       int b = find_node(c, r);
       if (b >= 0 && b < i)
@@ -133,8 +143,8 @@ bool City::grow() {
                {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}}) {
         auto next = street_point(c + x, r + y);
         if (find_node(c + x, r + y) < 0 && dry(next) &&
-            std::abs(next.x) < half_width - 18 &&
-            std::abs(next.z) < half_depth - 18)
+            std::abs(next.x) < width - 18 &&
+            std::abs(next.z) < depth - 18)
           ++open_blocks;
       }
       double score = 2.4 * std::log1p(visits) + 1.3 * std::log1p(aligned) -

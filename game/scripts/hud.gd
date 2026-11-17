@@ -447,7 +447,8 @@ func sync_map(sim,count:int,buildings:int) -> void:
 		land_dots.append(Vector2(b.pos.x,b.pos.z))
 		land_uses.append(b.use)
 	if river.is_empty() and not sim.is_geographic():
-		for z in range(-320,321,8):
+		var extent:=int(sim.region_half_size().y)
+		for z in range(-extent,extent+1,8):
 			river.append(Vector2(sim.river_x(z),z))
 	while map_paths.size()<count:
 		var data:Dictionary=sim.street(map_paths.size())

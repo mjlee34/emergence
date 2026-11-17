@@ -42,8 +42,9 @@ double road_height(const Road &road, Point p, const Site &site) {
 double City::street_height(const Road &road, Point p) const {
   return road_height(road, p, site_);
 }
-City::City(uint32_t seed, Site site)
-    : site_(std::move(site)), seed_(seed), random_(seed) {
+City::City(uint32_t seed, Site site, int township_through_tick)
+    : site_(std::move(site)), seed_(seed), random_(seed),
+      township_through_tick_(township_through_tick) {
   auto unit = [&] { return double(draw() >> 8) / 16777216.; };
   grid_phase_ = 6.2831853 * unit();
   grid_angle_ = .62 * (unit() - .5);

@@ -3,6 +3,13 @@ const Forms = preload("res://scripts/forms.gd")
 const X = 480
 const Z = 320
 const STEP = 5
+const TILE = 160
+const COARSE_STEP = 20
+var region:Vector2i
+var coarse_tiles:Dictionary={}
+var fine_tiles:Dictionary={}
+var target_tile:=Vector2i(9999,9999)
+var queued_tiles:Array[Vector2i]=[]
 var model
 var water_material:=ShaderMaterial.new()
 var lakes
@@ -21,35 +28,31 @@ func _cell(p:Vector3) -> Vector2i:
 func create(sim) -> void:
 	model = sim
 	sea=model.sea_level()
-	if model.is_geographic(): lakes=Forms.new()
-	var land=Forms.new(true)
-	land.finish=Forms.Finish.MEADOW
-	# Sample the playable valley finely and continue the horizon beyond it.
-	var xs:=_axis(X)
-	var zs:=_axis(Z)
-	var grid:=PackedVector3Array()
+	region=Vector2i(model.region_half_size())
 	var rng:=RandomNumberGenerator.new()
 	rng.seed=779
-	for z in zs:
-		for x in xs:
-			grid.append(Vector3(x,model.height_at(x,z),z))
-	for j in range(zs.size()-1):
-		for i in range(xs.size()-1):
-			var k:=j*xs.size()+i
-			_facet(land,grid[k],grid[k+1],grid[k+xs.size()+1])
-			_facet(land,grid[k],grid[k+xs.size()+1],grid[k+xs.size()])
-	land.attach(self)
+	# The original valley stays detailed. The outer districts start with the
+	# same 20 m spacing as the geographic survey.
+	_patch(Rect2i(-X,-Z,2*X,2*Z),STEP,true)
+	for z in range(-region.y,region.y,TILE):
+		for x in range(-region.x,region.x,TILE):
+			if x>=-X and x<X and z>=-Z and z<Z: continue
+			var key:=Vector2i(x/TILE,z/TILE)
+			coarse_tiles[key]=_patch(Rect2i(x,z,TILE,TILE),COARSE_STEP)
+	var horizon:=1920
+	for sign_dir in [-1,1]:
+		var z_edge:int=region.y if sign_dir==1 else -region.y-horizon
+		var x_edge:int=region.x if sign_dir==1 else -region.x-horizon
+		_patch(Rect2i(-region.x-horizon,z_edge,2*(region.x+horizon),horizon),80)
+		_patch(Rect2i(x_edge,-region.y,horizon,2*region.y),80)
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
-	plane.size = Vector2((X+1200)*2,(Z+1200)*2)
+	plane.size = Vector2(region+Vector2i(horizon,horizon))*2.
 	water.mesh = plane
 	water_material.shader = preload("res://scripts/river.gdshader")
 	water.material_override = water_material
 	water.position.y=sea+.025 if model.is_geographic() else 0.
 	add_child(water)
-	if has_lakes:
-		var surface=lakes.attach(self)
-		surface.material_override=water_material
 	_forest(rng)
 	if not model.is_geographic(): _rocks(rng)
 
@@ -67,12 +70,60 @@ func _facet(g,a: Vector3,b: Vector3,c: Vector3) -> void:
 		lakes.triangle(a+lift,b+lift,c+lift,Color.WHITE,Vector3.UP)
 	g.triangle(a,b,c,grass.lightened(.017*(1+sin(p.x*5+p.z))),Vector3.UP)
 
-func _axis(edge:int) -> PackedInt32Array:
-	var values:=PackedInt32Array()
-	for x in range(-edge-1200,-edge,30): values.append(x)
-	for x in range(-edge,edge,STEP): values.append(x)
-	for x in range(edge,edge+1201,30): values.append(x)
-	return values
+func _patch(rect:Rect2i,step:int,stitch:=false) -> Node3D:
+	var tile:=Node3D.new()
+	add_child(tile)
+	var land=Forms.new(true)
+	land.finish=Forms.Finish.MEADOW
+	lakes=Forms.new() if model.is_geographic() else null
+	has_lakes=false
+	var grid:=PackedVector3Array()
+	var cols:=rect.size.x/step+1
+	for z in range(rect.position.y,rect.end.y+1,step):
+		for x in range(rect.position.x,rect.end.x+1,step):
+			var h:float=model.height_at(x,z)
+			# Match the edges of a fine patch to the coarser neighbour.
+			if stitch and (z==rect.position.y or z==rect.end.y) and posmod(x,COARSE_STEP)!=0:
+				var dx:=posmod(x,COARSE_STEP)
+				h=lerpf(model.height_at(x-dx,z),model.height_at(x-dx+COARSE_STEP,z),dx/float(COARSE_STEP))
+			elif stitch and (x==rect.position.x or x==rect.end.x) and posmod(z,COARSE_STEP)!=0:
+				var dz:=posmod(z,COARSE_STEP)
+				h=lerpf(model.height_at(x,z-dz),model.height_at(x,z-dz+COARSE_STEP),dz/float(COARSE_STEP))
+			grid.append(Vector3(x,h,z))
+	for j in rect.size.y/step:
+		for i in cols-1:
+			var k:=j*cols+i
+			_facet(land,grid[k],grid[k+1],grid[k+cols+1])
+			_facet(land,grid[k],grid[k+cols+1],grid[k+cols])
+	land.attach(tile)
+	if has_lakes:
+		var surface=lakes.attach(tile)
+		surface.material_override=water_material
+	lakes=null
+	return tile
+
+func detail_near(focus:Vector3,extent:float) -> void:
+	var key:=Vector2i(floori(focus.x/TILE),floori(focus.z/TILE)) if extent<190. else Vector2i(9999,9999)
+	if key!=target_tile:
+		target_tile=key
+		queued_tiles.clear()
+		var wanted:Dictionary={}
+		for y in range(-1,2):
+			for x in range(-1,2):
+				var tile:=key+Vector2i(x,y)
+				if not coarse_tiles.has(tile): continue
+				wanted[tile]=true
+				if not fine_tiles.has(tile): queued_tiles.append(tile)
+		for tile in fine_tiles.keys():
+			if wanted.has(tile): continue
+			fine_tiles[tile].queue_free()
+			fine_tiles.erase(tile)
+			coarse_tiles[tile].show()
+		queued_tiles.sort_custom(func(a:Vector2i,b:Vector2i): return a.distance_squared_to(key)>b.distance_squared_to(key))
+	if not queued_tiles.is_empty():
+		var tile:Vector2i=queued_tiles.pop_back()
+		fine_tiles[tile]=_patch(Rect2i(tile*TILE,Vector2i(TILE,TILE)),STEP,true)
+		coarse_tiles[tile].hide()
 
 static func crown_mesh(image:Texture2D,height:float) -> QuadMesh:
 	var sheet:=QuadMesh.new()
@@ -99,8 +150,8 @@ func _forest(rng: RandomNumberGenerator) -> void:
 		var x := rng.randf_range(-X+3,X-3)
 		var z := rng.randf_range(-Z+3,Z-3)
 		if i>=11500:
-			x=rng.randf_range(-X-580,X+580)
-			z=rng.randf_range(-Z-580,Z+580)
+			x=rng.randf_range(-region.x-160,region.x+160)
+			z=rng.randf_range(-region.y-160,region.y+160)
 			if absf(x)<X and absf(z)<Z: continue
 		var h: float = model.height_at(x,z)
 		var density := sin(x*.069+sin(z*.07))*.25+cos(z*.078-x*.057)*.2

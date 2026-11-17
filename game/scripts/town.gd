@@ -6,7 +6,11 @@ const WALLS = ["#c6bdaa","#bda991","#b88874","#abb1a7","#c2af95","#a9aca2"]
 const ROOFS = ["#a17a66","#5b6770","#94705e","#777169","#ad8675","#52615f"]
 var model
 var land
-var market_hall_built:=false
+var market_lot:=-1
+var lots:Array[Dictionary]=[]
+var detail_queue:Array[int]=[]
+var detail_anchor:=Vector3.INF
+var detail_dirty:=true
 var roads := 0
 var buildings := 0
 var renewals:=0
@@ -115,6 +119,7 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 		if work.advance(time,state.construction_ticks):
 			work.queue_free()
 			construction.erase(id)
+			detail_dirty=true
 	street_lights.visible=lamps>.01
 	if street_lights.visible and (absf(lamps-lamp_level)>.012 or lamp_level<0.):
 		lamp_level=lamps
@@ -122,10 +127,17 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 	if street_lights.visible and state.tick!=last_light_tick:
 		last_light_tick=state.tick
 		for i in buildings:
+			if not sites[i].visible: continue
 			sites[i].set_instance_shader_parameter("occupancy",float(state.occupants[i]))
 
 func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	var lot:Dictionary=model.lot(id)
+	if market_lot<0 and lot.use==1 and lot.floors<4: market_lot=id
+	lot.market_hall=id==market_lot
+	if replace: lots[id]=lot
+	else: lots.append(lot)
+	land.clear_lot(lot.pos)
+	detail_dirty=true
 	var active:bool=time<lot.started+state.construction_ticks
 	var previous:MeshInstance3D
 	if replace:
@@ -143,7 +155,10 @@ func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 		var prior:=lot.duplicate()
 		prior.floors=lot.previous_floors
 		previous=_build(prior)
-	var finished:=_build(lot)
+	var camera:=get_viewport().get_camera_3d()
+	var detailed:bool=active or (camera!=null and camera.global_position.distance_squared_to(lot.pos)<190.*190.)
+	var finished:=_build(lot) if detailed else _district_block(lot)
+	finished.set_meta("detailed",detailed)
 	finished.set_meta("floors",lot.floors)
 	if replace: sites[id]=finished
 	else: sites.append(finished)
@@ -152,6 +167,75 @@ func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 		add_child(work)
 		work.setup(lot,finished,previous)
 		construction[id]=work
+
+# Keep resident selection, lot IDs and construction independent of the mesh
+# shown from this camera. Hysteresis prevents rebuilds on the distance boundary.
+func update_detail(camera:Vector3) -> void:
+	if detail_dirty or camera.distance_squared_to(detail_anchor)>18.*18.:
+		detail_dirty=false
+		detail_anchor=camera
+		detail_queue.clear()
+		for id in sites.size():
+			if construction.has(id): continue
+			var detailed:bool=sites[id].get_meta("detailed")
+			var d:=camera.distance_squared_to(sites[id].position)
+			if (detailed and d>250.*250.) or (not detailed and d<190.*190.):
+				detail_queue.append(id)
+		detail_queue.sort_custom(func(a:int,b:int): return sites[a].position.distance_squared_to(camera)>sites[b].position.distance_squared_to(camera))
+	for _swap in mini(3,detail_queue.size()):
+		var id:int=detail_queue.pop_back()
+		var previous:=sites[id]
+		var detailed:bool=not previous.get_meta("detailed")
+		var next:=_build(lots[id]) if detailed else _district_block(lots[id])
+		next.set_meta("floors",lots[id].floors)
+		next.set_meta("detailed",detailed)
+		next.set_instance_shader_parameter("occupancy",previous.get_instance_shader_parameter("occupancy"))
+		sites[id]=next
+		previous.hide()
+		previous.queue_free()
+
+func _district_block(lot:Dictionary) -> MeshInstance3D:
+	var s:int=lot.style
+	var w:=7.2+(s%4)*.62
+	var d:=5.8+(s%5)*.47
+	var floors:int=lot.floors
+	var h:=floors*2.8 if floors>=4 else floors*2.65+.48
+	var wall:=Color(WALLS[s%WALLS.size()])
+	var roof:=Color(ROOFS[(s/7)%ROOFS.size()])
+	var g=Forms.new(true)
+	g.finish=Forms.Finish.WALK
+	g.box(Vector3(0,-.13,0),Vector3(w+1.85,.80,d+1.95),Color("#a9a58e"))
+	if lot.use==2:
+		g.finish=Forms.Finish.METAL
+		g.box(Vector3(0,2.15,0),Vector3(w+1.2,4.3,d+.8),Color("#a5aa98"))
+		_gable(g,w+1.2,d+.8,4.3,Color("#77807f"),wall,true)
+		g.taper(Vector3(-w*.33,3.8,-d*.22),.58,.42,3.4+s%4,6,Color("#a1775d"))
+	else:
+		g.finish=Forms.Finish.PLASTER
+		g.box(Vector3(0,h*.5,0),Vector3(w,h,d),wall)
+		g.finish=Forms.Finish.GLASS
+		if floors>=9:
+			g.box(Vector3(0,(h+4)*.5,0),Vector3(w+.06,h-4.,d+.06),Color("#607979"))
+			g.finish=Forms.Finish.PLAIN
+			for level in range(2,floors,2):
+				g.box(Vector3(0,level*2.8+.35,0),Vector3(w+.12,.24,d+.12),wall)
+		else:
+			for level in floors:
+				for side in [-1,1]:
+					var y:=1.5+level*2.7
+					g.quad(Vector3(-w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y+.51,side*(d*.5+.04)),Vector3(-w*.41,y+.51,side*(d*.5+.04)),Color("#647876"),Vector3.BACK*side)
+		if lot.use==0 and floors<4:
+			if s%3==1: _hip_roof(g,w,d,h,roof)
+			else: _gable(g,w,d,h,roof,wall)
+		else:
+			g.finish=Forms.Finish.FELT
+			g.box(Vector3(0,h+.2,0),Vector3(w+.4,.45,d+.4),roof)
+			g.box(Vector3(-.52,h+.92,0),Vector3(w*.52,1.4,d*.48),Color("#929c95"))
+			if floors>=9 and s%3==0: g.taper(Vector3(-.5,h+1.6,0),.18,.04,3.2,6,wall)
+	var site=g.attach(self)
+	site.position=lot.pos
+	site.rotation.y=lot.yaw
+	return site
 
 func _ribbon(g,path: PackedVector3Array,width: float,lift: float,color: Color,offset:=0.,deck:=false) -> void:
 	var left: Array[Vector3]=[]
@@ -438,8 +522,7 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 	else:
 		_gable(g,w,d,h,Color("#698181"),wall)
 		g.taper(Vector3(w*.34,h-.5,0),.46,.33,3.0,8,Color("#a9775e"))
-	if use==1 and not market_hall_built:
-		market_hall_built=true
+	if use==1 and lot.market_hall:
 		# Stepped masonry parapet on the oldest shop on the high street.
 		var face:float=int(lot.front_sign)*(d*.5-.07)
 		g.finish=Forms.Finish.BRICK
@@ -468,7 +551,6 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 			parked.position=Vector3(w*.5+1.05,.24,0)
 			parked.rotation.y=PI*.5
 			site.add_child(parked)
-	land.clear_lot(lot.pos)
 	return site
 
 func _home_front(g,lot:Dictionary,w:float,d:float) -> void:
@@ -610,7 +692,6 @@ func _urban_block(lot:Dictionary,w:float,d:float) -> MeshInstance3D:
 	site.position=lot.pos
 	site.rotation.y=lot.yaw
 	_add_shop_sign(site,lot,d)
-	land.clear_lot(lot.pos)
 	return site
 
 

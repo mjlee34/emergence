@@ -447,10 +447,22 @@ int main() {
               << a.roads().size() << ", buildings " << lots << " / "
               << a.buildings().size() << "\n";
   }
+  // A checksum produced by the preceding release after reaching the old boundary.
+  auto migrated = restore("EMERGENCE-10 147 600000 242605203417491144");
+  CHECK(migrated && migrated->population() == 51667);
+  if (migrated) {
+    migrated->advance(planning_interval);
+    CHECK(migrated->planning_extent().x > township_half_width);
+    auto reopened = restore(checkpoint(*migrated));
+    CHECK(reopened && reopened->digest() == migrated->digest());
+  }
   City regional(147u);
   double initial_span = regional.bounds()[2] - regional.bounds()[0];
   regional.advance(9600 * planning_interval);
   CHECK(regional.bounds()[2] - regional.bounds()[0] > 3. * initial_span);
+  auto bounds = regional.bounds();
+  CHECK(bounds[0] < -township_half_width || bounds[1] < -township_half_depth ||
+        bounds[2] > township_half_width || bounds[3] > township_half_depth);
   CHECK(regional.renewals().size() > 0);
   CHECK(std::none_of(regional.facilities().begin(), regional.facilities().end(),
                      [](const auto &f) { return is_landmark(f.kind); }));

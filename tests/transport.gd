@@ -21,6 +21,10 @@ func run() -> void:
 			break
 	check(driver >= 0, "Opening traffic has no resident at the wheel")
 	if driver >= 0:
+		var full:Dictionary=world.model.mobility(0.)
+		var remote:Dictionary=world.model.mobility_near(0.,Vector2(1400,950),1.,driver)
+		check(remote.drivers.size()==1 and remote.drivers[0]==driver,"Camera culling lost the tracked driver")
+		check(remote.waiting==full.waiting and remote.buses==full.buses,"Camera culling changed transit passenger totals")
 		world._watch(driver)
 		world._process(0.)
 		var r: Dictionary = world.model.resident(driver,0.)

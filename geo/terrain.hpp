@@ -7,5 +7,6 @@ double distance(Point a, Point b);
 double segment_distance(Point p, Point a, Point b);
 double ground(Point p);
 double river_center(double z);
-constexpr double half_width = 480, half_depth = 320;
+constexpr double township_half_width = 480, township_half_depth = 320;
+constexpr double half_width = 3 * township_half_width, half_depth = 3 * township_half_depth;
 } // namespace city

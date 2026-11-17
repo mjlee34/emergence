@@ -89,6 +89,7 @@ func _ready() -> void:
 	add_child(transit)
 	transit.create(model)
 	add_child(people)
+	orbit.region_half_size=model.region_half_size()
 	add_child(orbit)
 	if atlas:
 		orbit.following=false
@@ -175,7 +176,9 @@ func _sync() -> void:
 			orbit.update_view()
 	weather=model.weather(remainder)
 	weather_view.sync(weather,state.tick+remainder,orbit)
+	land.detail_near(orbit.pivot,orbit.extent)
 	town.sync(state,remainder,weather_view.lamps)
+	town.update_detail(orbit.global_position)
 	var calls:Dictionary={}
 	for call in model.responders(remainder): calls[call.station]=call
 	for id in town.greens.size():
@@ -184,7 +187,7 @@ func _sync() -> void:
 			orbit.landmark_peak=site.position+Vector3.UP*site.visible_monument_height
 		if site.data.kind in [3,4,5] and (site.on_call or calls.has(id)):
 			site.move_responder(calls.get(id,{}),state.tick+remainder)
-	transit.sync(model,town,remainder)
+	transit.sync(model,town,remainder,orbit,selected)
 	if following_bus>=0:
 		var at:int=transit.service.buses[following_bus].stop
 		var bus:Node3D=transit.buses[following_bus]
@@ -363,6 +366,7 @@ func _view_business() -> void:
 
 func _fit_city() -> void:
 	_leave_site()
+	hud.district_title="City overview"
 	following_van=-1
 	watching=false
 	selected=-1

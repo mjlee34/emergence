@@ -1,4 +1,6 @@
 #include "sim/city.hpp"
+#include <algorithm>
+#include <tuple>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/godot.hpp>
@@ -7,6 +9,33 @@ using namespace godot;
 class CityModel : public RefCounted {
   GDCLASS(CityModel, RefCounted)
   city::City state;
+  mutable std::array<std::vector<int>, 24> travel_hours;
+  mutable int indexed_travelers = 0, travel_revision = -1;
+
+  void index_travelers() const {
+    const auto &life = state.life();
+    if (travel_revision != life.job_revision()) {
+      for (auto &hour : travel_hours)
+        hour.clear();
+      indexed_travelers = 0;
+      travel_revision = life.job_revision();
+    }
+    for (; indexed_travelers < state.population(); ++indexed_travelers) {
+      const auto &r = life.people()[indexed_travelers];
+      if (r.mode == city::Mode::Walk)
+        continue;
+      const double starts[] = {r.work >= 0 ? double(r.leave_home) : 405. + r.variation % 545,
+                               r.work >= 0 ? double(r.finish) : r.outing_return};
+      int last_hour = -1;
+      for (int leg = 0; leg < 2; ++leg) {
+        int first = std::max(last_hour + 1, int(starts[leg]) / 60);
+        int end = std::min(23, int(starts[leg] + r.trips[leg].duration) / 60);
+        for (int hour = first; hour <= end; ++hour)
+          travel_hours[hour].push_back(indexed_travelers);
+        last_hour = std::max(last_hour, end);
+      }
+    }
+  }
   Vector3 surface(city::Point p) const {
     return Vector3(p.x, state.height(p), p.z);
   }
@@ -16,6 +45,7 @@ protected:
     ClassDB::bind_method(D_METHOD("settle_at", "seed", "latitude", "longitude", "elevations", "lakes"), &CityModel::settle_at);
     ClassDB::bind_method(D_METHOD("is_geographic"), &CityModel::is_geographic);
     ClassDB::bind_method(D_METHOD("inland_water", "x", "z"), &CityModel::inland_water);
+    ClassDB::bind_method(D_METHOD("region_half_size"), &CityModel::region_half_size);
     ClassDB::bind_method(D_METHOD("sea_level"), &CityModel::sea_level);
     ClassDB::bind_method(D_METHOD("reset", "seed"), &CityModel::reset);
     ClassDB::bind_method(D_METHOD("step", "ticks"), &CityModel::step);
@@ -42,6 +72,7 @@ protected:
     ClassDB::bind_method(D_METHOD("lot", "index"), &CityModel::lot);
     ClassDB::bind_method(D_METHOD("facility", "id"), &CityModel::facility);
     ClassDB::bind_method(D_METHOD("bus_network"), &CityModel::bus_network);
+    ClassDB::bind_method(D_METHOD("mobility_near","fraction","focus","radius","selected"), &CityModel::mobility_near);
     ClassDB::bind_method(D_METHOD("mobility", "fraction"),
                          &CityModel::mobility);
     ClassDB::bind_method(D_METHOD("traffic", "fraction"), &CityModel::traffic);
@@ -55,12 +86,14 @@ public:
     if (!site.suitable())
       return false;
     state = city::City(seed, std::move(site));
+    travel_revision = -1;
     return true;
   }
   bool is_geographic() const { return state.site().geographic(); }
   bool inland_water(double x, double z) const { return state.site().inland_water({x, z}); }
+  Vector2 region_half_size() const { return Vector2(city::half_width,city::half_depth); }
   double sea_level() const { return -state.site().datum(); }
-  void reset(int seed) { state = city::City(seed); }
+  void reset(int seed) { state = city::City(seed); travel_revision = -1; }
   void step(int ticks) { state.advance(ticks); }
   double height_at(double x, double z) const { return state.height({x, z}); }
   double river_x(double z) const { return city::river_center(z); }
@@ -449,6 +482,9 @@ public:
     return data;
   }
   Dictionary mobility(double fraction) const {
+    return mobility_near(fraction, Vector2(), -1., -1);
+  }
+  Dictionary mobility_near(double fraction, Vector2 focus, double radius, int selected) const {
     Dictionary data;
     const auto &life = state.life();
     const auto &net = life.transit();
@@ -461,9 +497,10 @@ public:
     first_waiter.resize(net.stops().size());
     first_waiter.fill(-1);
     PackedVector4Array cars;
-    for (int id = 0; id < state.population(); ++id) {
-      if (life.people()[id].mode == city::Mode::Walk)
-        continue;
+    struct Car { double distance; int id; Vector4 pose; };
+    std::vector<Car> visible;
+    index_travelers();
+    for (int id : travel_hours[(int(minute) / 60) % 24]) {
       auto s = life.routine(id, tick);
       if (s.activity == city::Activity::Waiting) {
         ++waiting.ptrw()[s.stop];
@@ -480,10 +517,24 @@ public:
                        : (s.last_mile ? 1. : 0.);
         auto car =
             city::drive_pose(state, route, t * route.back().end_time, .98);
-        drivers.push_back(id);
-        cars.push_back(
-            Vector4(car.position.x, car.height, car.position.z, car.yaw));
+        double dx = car.position.x - focus.x, dz = car.position.z - focus.y;
+        double distance_sq = dx * dx + dz * dz;
+        if (radius < 0 || id == selected || distance_sq <= radius * radius)
+          visible.push_back({id == selected ? -1. : distance_sq, id,
+                             Vector4(car.position.x, car.height, car.position.z, car.yaw)});
       }
+    }
+    constexpr size_t visible_limit = 240;
+    if (radius >= 0 && visible.size() > visible_limit) {
+      std::nth_element(visible.begin(), visible.begin() + visible_limit, visible.end(),
+          [](const Car &a, const Car &b) {
+            return std::tie(a.distance, a.id) < std::tie(b.distance, b.id);
+          });
+      visible.resize(visible_limit);
+    }
+    for (const auto &car : visible) {
+      drivers.push_back(car.id);
+      cars.push_back(car.pose);
     }
     Array buses;
     for (int id = 0; !net.stops().empty() && id < city::Transit::fleet; ++id) {

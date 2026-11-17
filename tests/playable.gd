@@ -63,6 +63,17 @@ func check_construction(world, initial: Dictionary) -> void:
 	check(not world.watching_construction,"Construction camera did not release")
 	world._street_view()
 
+func check_building_detail(world) -> void:
+	var town=world.town
+	var lot_id:=0
+	var distant:=Vector3(0,6000,0)
+	for step in town.sites.size(): town.update_detail(distant)
+	check(not town.sites[lot_id].get_meta("detailed"),"Overview retained street-level detail")
+	var pos:Vector3=town.lots[lot_id].pos
+	for step in town.sites.size(): town.update_detail(pos+Vector3.UP*4.)
+	check(town.sites[lot_id].get_meta("detailed") and town.sites[lot_id].position==pos,
+		"Returning to a parcel failed to restore its street-level model")
+
 func run() -> void:
 	var world = load("res://main.tscn").instantiate()
 	root.add_child(world)
@@ -135,7 +146,14 @@ func run() -> void:
 	check(world.orbit.size>small_extent,"Camera did not expand with the city")
 	check(world.town.sites.size()==world.state.buildings,"Redevelopment duplicated a parcel")
 	check(world.town.renewals==world.state.renewals,"Redevelopment did not reach the scene")
-	check(world.transit.cars.size()==world.model.traffic(0).size(),"Traffic population did not reach the scene")
+	var nearby:Dictionary=world.model.mobility_near(world.remainder,Vector2(world.orbit.pivot.x,world.orbit.pivot.z),world.orbit.extent*1.7+25.,-1)
+	world._sync()
+	check(world.transit.cars.size()==nearby.drivers.size() and nearby.drivers.size()<=240,"Visible cars did not respect the camera budget")
+	var focus:=Vector3(900,0,500)
+	for i in 10: world.land.detail_near(focus,120.)
+	check(world.land.fine_tiles.size()==9,"Outer district did not gain local terrain detail")
+	world.land.detail_near(focus,500.)
+	check(world.land.fine_tiles.is_empty(),"Outer terrain retained detail after zooming out")
 	world.hud.district_requested.emit(2)
 	check(world.hud.district_title=="Workshop district" and not world.orbit.following,"Workshop district focus failed")
 	world.hud.district_requested.emit(1)
@@ -147,5 +165,6 @@ func run() -> void:
 	check(person.home>=0 and world.hud.identity.text.contains("#"),"Resident address or identity missing")
 	world.hud.reset_button.pressed.emit()
 	check(not world.watching and world.orbit.following,"Fit city did not leave resident view")
+	check_building_detail(world)
 	print("Playable checks completed with ",failures," failures.")
 	quit(1 if failures else 0)

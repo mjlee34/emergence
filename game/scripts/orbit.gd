@@ -3,6 +3,7 @@ var pivot:=Vector3(-24,5,1)
 var azimuth:=-.58
 var elevation:=.59
 var extent:=158.
+var region_half_size:=Vector2(480,320)
 var following:=true
 var landmark_peak:=Vector3.ZERO
 var city_bounds:=Vector4(-115,-70,65,70)
@@ -13,7 +14,7 @@ func _ready() -> void:
 	projection=Camera3D.PROJECTION_PERSPECTIVE
 	fov=38.
 	near=.20
-	far=4200
+	far=9500
 	update_view()
 
 func update_view() -> void:
@@ -47,7 +48,7 @@ func frame_city(bounds:Vector4,weight:float) -> void:
 	var viewport_size:=get_viewport().get_visible_rect().size
 	var horizontal:=(dx*right+dz*depth)*viewport_size.y/viewport_size.x
 	var vertical:=(dz*right+dx*depth)*sin(elevation)
-	var goal:=clampf(maxf(horizontal,vertical)*1.05+31.,160.,1000.)
+	var goal:=clampf(maxf(horizontal,vertical)*1.05+31.,160.,region_half_size.length()*2.)
 	var center:=Vector3((bounds.x+bounds.z)*.5,8,(bounds.y+bounds.w)*.5)
 	if landmark_peak!=Vector3.ZERO:
 		center.y=maxf(center.y,landmark_peak.y*.35)
@@ -64,7 +65,7 @@ func home() -> void:
 
 func zoom_by(factor: float) -> void:
 	following=false
-	extent=clampf(extent*factor,16,1050)
+	extent=clampf(extent*factor,16,region_half_size.length()*2.)
 	update_view()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -96,5 +97,5 @@ func _pan(delta:Vector2) -> void:
 	following=false
 	var forward:=Vector3(sin(azimuth),0,cos(azimuth))
 	pivot+=(forward*(-delta.y)/sin(elevation)-global_basis.x*delta.x)*extent/get_viewport().get_visible_rect().size.y
-	pivot.x=clampf(pivot.x,-480,480)
-	pivot.z=clampf(pivot.z,-320,320)
+	pivot.x=clampf(pivot.x,-region_half_size.x,region_half_size.x)
+	pivot.z=clampf(pivot.z,-region_half_size.y,region_half_size.y)

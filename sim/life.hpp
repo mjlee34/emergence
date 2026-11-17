@@ -69,6 +69,7 @@ public:
   const auto &people() const { return residents_; }
   const auto &occupancies() const { return places_; }
   const auto &paths() const { return paths_; }
+  int job_revision() const { return job_revision_; }
   int employed() const { return employed_; }
   int workforce() const {
     return employed_ + static_cast<int>(waiting_.size());
@@ -93,7 +94,7 @@ private:
   std::vector<int> housing_, employers_, markets_, waiting_;
   std::map<std::pair<int, int>, int> route_index_;
   std::vector<Footpath> paths_;
-  int jobs_ = 0, employed_ = 0;
+  int jobs_ = 0, employed_ = 0, job_revision_ = 0;
   void assign_work(const City &city, Resident &resident);
   void assign_shop(const City &city, Resident &resident);
   int path(const City &city, int a, int b);

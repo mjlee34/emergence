@@ -89,13 +89,14 @@ double suitability(const City &city, const Facility &f, double demand) {
     }
   }
   double lo = city.height(f.center), hi = lo;
+  const auto [width,depth] = city.planning_extent();
   int samples = is_landmark(f.kind) ? 32 : 8;
   for (int k = 0; k < samples; ++k) {
     double a = k * 6.283185307179586 / samples;
     Point p{f.center.x + f.radius * std::cos(a),
             f.center.z + f.radius * std::sin(a)};
     if (city.site().inland_water(p) || city.site().elevation(p) < 1.4 ||
-        std::abs(p.x) > half_width - 1 || std::abs(p.z) > half_depth - 1)
+        std::abs(p.x) > width - 1 || std::abs(p.z) > depth - 1)
       return 0;
     lo = std::min(lo, city.height(p));
     hi = std::max(hi, city.height(p));

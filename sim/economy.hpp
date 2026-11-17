@@ -1,5 +1,6 @@
 #pragma once
 #include "sim/road_trip.hpp"
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -46,6 +47,13 @@ private:
   std::vector<int> shops_, works_;
   std::vector<Shipment> active_;
   int next_id_ = 1, delivered_ = 0, sales_ = 0, production_ = 0, next_shop_ = 0;
+  // Each roster is in permanent resident ID order, preserving settlement
+  // priority when cash or stock runs out during a clearing.
+  std::array<std::vector<int>,24> hourly_roster_;
+  int indexed_people_ = 0, indexed_jobs_ = 0;
+  struct Transaction { int resident, place; bool wage; };
+  std::vector<Transaction> clearing_;
+  void index_schedules(const City &city);
   void trade(const City &city);
   void order(const City &city);
 };

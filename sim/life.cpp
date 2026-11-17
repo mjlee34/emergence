@@ -495,6 +495,7 @@ void Life::settle(const City &c) {
   }
 }
 void Life::hire_waiting(const City &c) {
+  if (!waiting_.empty() && !employers_.empty()) ++job_revision_;
   // Apply new assignments overnight, when every old itinerary has finished.
   while (!waiting_.empty() && !employers_.empty()) {
     auto &r = residents_[waiting_.back()];
