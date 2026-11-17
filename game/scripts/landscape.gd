@@ -4,6 +4,7 @@ const X = 480
 const Z = 320
 const STEP = 5
 var model
+var water_material:=ShaderMaterial.new()
 var lakes
 var has_lakes:=false
 var sea:=0.
@@ -42,14 +43,13 @@ func create(sim) -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2((X+1200)*2,(Z+1200)*2)
 	water.mesh = plane
-	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://scripts/river.gdshader")
-	water.material_override = mat
+	water_material.shader = preload("res://scripts/river.gdshader")
+	water.material_override = water_material
 	water.position.y=sea+.025 if model.is_geographic() else 0.
 	add_child(water)
 	if has_lakes:
 		var surface=lakes.attach(self)
-		surface.material_override=mat
+		surface.material_override=water_material
 	_forest(rng)
 	if not model.is_geographic(): _rocks(rng)
 

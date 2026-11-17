@@ -33,6 +33,7 @@ protected:
     ClassDB::bind_method(D_METHOD("delivery_route", "id"),
                          &CityModel::delivery_route);
     ClassDB::bind_method(D_METHOD("freight", "fraction"), &CityModel::freight);
+    ClassDB::bind_method(D_METHOD("weather", "fraction"), &CityModel::weather);
     ClassDB::bind_method(D_METHOD("summary"), &CityModel::summary);
     ClassDB::bind_method(D_METHOD("renewed_lot", "index"),
                          &CityModel::renewed_lot);
@@ -62,6 +63,16 @@ public:
   void step(int ticks) { state.advance(ticks); }
   double height_at(double x, double z) const { return state.height({x, z}); }
   double river_x(double z) const { return city::river_center(z); }
+  Dictionary weather(double fraction) const {
+    const auto w = state.weather(fraction);
+    Dictionary sky;
+    sky["sun"] = Vector3(w.sun_east, w.sun_up, w.sun_south);
+    sky["clouds"] = w.clouds;
+    sky["rain"] = w.rain;
+    sky["wetness"] = w.wetness;
+    sky["wind"] = Vector2(w.wind_east, w.wind_south);
+    return sky;
+  }
   Dictionary summary() const {
     Dictionary d;
     const auto &economy = state.economy();

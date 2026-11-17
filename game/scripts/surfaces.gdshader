@@ -15,9 +15,15 @@ instance uniform vec4 workfront = vec4(0.,0.,0.,2.);
 instance uniform float built_height = 10000.;
 instance uniform float occupancy = 0.0;
 uniform float night = 0.0;
+uniform float wetness = 0.;
+uniform float rain = 0.;
+uniform float clouds = 0.;
+uniform vec2 cloud_scroll;
+uniform float wave_time = 0.;
+varying vec3 world_pos;
 varying vec3 local;
 varying flat vec2 building_key;
-void vertex(){ local=VERTEX; building_key=floor(MODEL_MATRIX[3].xz); }
+void vertex(){ local=VERTEX; world_pos=(MODEL_MATRIX*vec4(VERTEX,1.)).xyz; building_key=floor(MODEL_MATRIX[3].xz); }
 float hash(vec2 p){ return fract(sin(dot(p,vec2(53.315,18.713)))*8175.15); }
 void fragment(){
 	if(local.y>built_height || dot(local.xz,workfront.xy)+workfront.z+UV2.y>workfront.w) discard;
@@ -76,9 +82,32 @@ void fragment(){
 		base*=.71+texture(road,at).r*2.;
 		if(kind==8) base*=.83+.17*smoothstep(.2,2.6,local.y);
 	}
+	float absorb=kind==5 ? .15 : .27;
 	vec2 xy=(detail.rg*2.-1.)*.64;
+	if(kind==1 || kind==2){
+		// Uneven asphalt and stone collect a thin film first in their depressions.
+		float low=.50+.22*sin(dot(world_pos.xz,vec2(.59,.31)))+.17*sin(world_pos.x*.21-world_pos.z*.48);
+		float film=wetness*smoothstep(.14,.72,low+.18*wetness);
+		float pooled=smoothstep(.33,.82,film);
+		base*=1.-wetness*.30-film*.28;
+		detail.b=mix(detail.b,.12,film);
+		spec=mix(spec,.90,film);
+		xy*=1.-film*.78;
+		vec2 cell=world_pos.xz*2.0;
+		vec2 delta=fract(cell)-.5;
+		float ring=fract(wave_time*1.9+hash(floor(cell)));
+		float radius=length(delta);
+		float splash=sin((radius-ring*.55)*64.)*exp(-abs(radius-ring*.55)*25.)*(1.-ring);
+		xy+=delta/(radius+.08)*splash*rain*pooled*.14*(1.-smoothstep(.08,.5,length(fwidth(cell))));
+	}else if(kind==3 || kind==4 || kind==5 || kind==8 || kind==9){
+		base*=1.-wetness*absorb;
+		detail.b-=wetness*.13;
+	}
 	NORMAL_MAP=vec3(xy,sqrt(max(0.,1.-dot(xy,xy))))*.5+.5;
-	ALBEDO=base;
+	vec2 shadow_at=world_pos.xz*.018+cloud_scroll*3.;
+	float patches=smoothstep(-.65,.7,sin(shadow_at.x+.8*sin(shadow_at.y))*.64+sin(shadow_at.y*.79)*.36);
+	float broken=4.*clouds*(1.-clouds);
+	ALBEDO=base*(1.-patches*broken*(1.-night)*.14);
 	ROUGHNESS=clamp(detail.b,.16,.98);
 	SPECULAR=spec;
 }

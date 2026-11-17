@@ -51,6 +51,8 @@ var live:Label
 var population:Label
 var day:Label
 var roads:Label
+signal skyline_requested
+var weather_label:=Button.new()
 var entry:Label
 var reset_button:=Button.new()
 var map_button:=Button.new()
@@ -80,13 +82,18 @@ func _ready() -> void:
 	scrim.gradient=gradient
 	scrim.fill=GradientTexture2D.FILL_RADIAL
 	scrim.fill_from=Vector2(0.03,0.01)
-	scrim.fill_to=Vector2(.76,.79)
+	scrim.fill_to=Vector2(.68,.66)
 	sans.font_names=PackedStringArray(["Avenir Next","Helvetica Neue","Arial"])
 	serif.font_names=PackedStringArray(["Baskerville","Georgia","Times New Roman"])
 	_label(self,"E M E R G E N C E",Vector2(82,30),18,IVORY)
 	_label(self,place_name,Vector2(34,69),53,IVORY,serif)
 	_label(self,place_subtitle,Vector2(37,140),16,MUTED)
-	entry=_label(self,"",Vector2(37,171),14,GOLD)
+	weather_label.position=Vector2(34,164)
+	weather_label.tooltip_text="Watch the skyline (W)"
+	_style_button(weather_label,false)
+	add_child(weather_label)
+	weather_label.pressed.connect(func(): skyline_requested.emit())
+	entry=_label(self,"",Vector2(37,206),14,GOLD)
 	live=_label(self,"",Vector2.ZERO,14,IVORY)
 	live.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
 	live.add_theme_stylebox_override("normal",_box(Color("#203532eb"),6,Color.TRANSPARENT,0))
@@ -378,6 +385,9 @@ func _address(model,id:int) -> String:
 
 func _time(minute:int) -> String:
 	return "%02d:%02d"%[int(minute/60),minute%60]
+
+func show_weather(phase:String,condition:String) -> void:
+	weather_label.text=phase+"   ·   "+condition+"   ↗"
 
 func display(data:Dictionary,multiplier:int,angle:float) -> void:
 	if state!=data:

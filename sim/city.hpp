@@ -2,6 +2,7 @@
 #include "geo/site.hpp"
 #include "sim/economy.hpp"
 #include "sim/life.hpp"
+#include "sim/weather.hpp"
 #include <array>
 #include <cstdint>
 #include <deque>
@@ -62,6 +63,10 @@ public:
   double height(Point p) const { return site_.height(p); }
   double street_height(const Road &road, Point p) const;
   void advance(int ticks);
+  Weather weather(double fraction = 0.) const {
+    return weather_at(seed_, site_.geographic() ? site_.latitude : 45.,
+                      tick_ + fraction);
+  }
   int tick() const { return tick_; }
   int population() const { return population_; }
   uint32_t seed() const { return seed_; }

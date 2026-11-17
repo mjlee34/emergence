@@ -8,7 +8,7 @@ The original Alder Reach fixture opens at 07:45. On the market street, commuters
 
 [Watch a street, a bridge and an eight-storey redevelopment under construction](captures/construction.mp4) · [Construction stages](captures/construction-stages.jpg)
 
-[Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
+[Watch sunset, rainfall and sunrise in the city](captures/city-weather.mp4) · [Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
 
 [Watch a new playground take shape and children use the slide](captures/neighbourhood-parks.mp4) · [Watch the morning bus and a resident’s drive to work](captures/bus-commute.mp4) · [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
 
@@ -30,6 +30,7 @@ The simulation starts at **1×** with one local minute passing per real second. 
 | --- | --- |
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
+| Watch the skyline toward the sun | W or the weather indicator beneath the place name |
 | Visit parks and playgrounds and view current attendance | P, Parks, or click the grounds |
 | Follow the nearest active construction project | G or Construction |
 | Follow a resident | Click a pedestrian or private car, or choose Meet a resident |
@@ -84,6 +85,12 @@ With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies
 The founding road graph determines the route of **Line 1**. Four buses circulate in two directions, serving each direction every 18 city minutes. Each vehicle holds 32 passengers and opens its doors at each two-minute stop. A full segment pushes subsequent riders to a later departure or another option. Click a private car to inspect its driver, or press **B** and select **Meet a rider**. The city map highlights the line, stops and tracked bus. To start alongside the morning queue in the fixture, launch with `-- --fixture --at=79 --bus=0`.
 
 Building occupancy, workers on shift and shoppers at the till follow these schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
+
+### Day, night and weather
+
+The clock uses local solar time. Day one begins near the March equinox. Latitude and the passing days change the sun’s direction and the length of daylight. The original fixture uses 45° north. At dusk, occupied windows, streetlights and nearby vehicle headlights illuminate the streets. Press **W** or click the weather indicator to watch the skyline.
+
+Each settlement generates its own weather from the simulation seed. Cloud cover, rain and wind evolve over several hours. Pedestrians open umbrellas, distant terrain grows hazy, and paving retains water after the rain passes. All weather and water motion follows the simulation clock, including pause and fast-forward. Existing checkpoints contain the seed, site and tick needed to recover these conditions.
 
 ### Parks and playgrounds
 
@@ -151,6 +158,7 @@ After building the extension and importing the project, run the integration chec
 "$GODOT" --headless --path game --script ../tests/playable.gd
 "$GODOT" --headless --path game --script ../tests/transport.gd
 "$GODOT" --headless --path game --script ../tests/green_spaces.gd
+"$GODOT" --headless --path game --script ../tests/weather.gd
 "$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
 ```
 

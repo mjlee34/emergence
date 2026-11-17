@@ -33,8 +33,8 @@ var people:=People.new()
 var selected:=-1
 var watching:=false
 var click_start:=Vector2.ZERO
-var light:=DirectionalLight3D.new()
-var atmosphere:=Environment.new()
+var weather_view:=preload("res://scripts/weather_view.gd").new()
+var weather:Dictionary={}
 var remainder:=0.
 var state:Dictionary
 var capture_path:=""
@@ -43,6 +43,7 @@ var construction_target:=Vector2i(-1,-1) # x=0 for streets, x=1 for lots
 var fixed_site:=Vector2i(-1,-1)
 var capture_tick:=0
 var capture_detail:=false
+var capture_skyline:=false
 var atlas:=false
 var street_capture:=false
 var meet_capture:=false
@@ -68,6 +69,7 @@ func _ready() -> void:
 		if arg.begins_with("--district="):
 			capture_district=clampi(int(arg.trim_prefix("--district=")),0,2)
 			street_capture=true
+		if arg=="--skyline": capture_skyline=true
 		if arg=="--atlas": atlas=true
 		if arg=="--detail": capture_detail=true
 		if arg.begins_with("--speed="):
@@ -78,7 +80,7 @@ func _ready() -> void:
 	if not model:
 		model=CityModel.new()
 		if seed_value!=147: model.reset(seed_value)
-	_lighting()
+	add_child(weather_view)
 	add_child(land)
 	land.create(model)
 	add_child(town)
@@ -107,6 +109,7 @@ func _ready() -> void:
 	hud.speed_selected.connect(_select_speed)
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
+	hud.skyline_requested.connect(_skyline)
 	hud.parks_requested.connect(_visit_green)
 	hud.bus_requested.connect(_watch_bus)
 	hud.meet_requested.connect(_meet)
@@ -123,6 +126,7 @@ func _ready() -> void:
 	if capture_counter>=0 and not model.business(capture_counter).is_empty():
 		business_id=capture_counter
 		_view_business()
+	if capture_skyline: _skyline()
 	if capture_green>=0 and capture_green<state.facilities: _visit_green(capture_green)
 	if capture_bus>=0: _watch_bus(capture_bus)
 	if capture_freight: _follow_delivery()
@@ -133,45 +137,6 @@ func _ready() -> void:
 		_frame_work(fixed_site,1.)
 	if capture_path!="": _capture.call_deferred()
 
-func _lighting() -> void:
-	var env:=atmosphere
-	env.background_mode=Environment.BG_SKY
-	var sky_model:=ProceduralSkyMaterial.new()
-	sky_model.sky_top_color=Color("#688aaa")
-	sky_model.sky_horizon_color=Color("#c2cbd0")
-	sky_model.ground_horizon_color=Color("#b6bfbd")
-	sky_model.ground_bottom_color=Color("#697369")
-	sky_model.sun_angle_max=9.
-	env.sky=Sky.new()
-	env.sky.sky_material=sky_model
-	env.fog_enabled=true
-	env.fog_density=.000105
-	env.fog_light_color=Color("#bec9cb")
-	env.fog_sky_affect=.32
-	env.background_color=Color("#294240")
-	env.ambient_light_source=Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color=Color("#c9d9df")
-	env.ambient_light_energy=.34
-	env.reflected_light_source=Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode=Environment.TONE_MAPPER_ACES
-	env.ssao_enabled=true
-	env.ssao_radius=1.6
-	env.ssao_intensity=1.6
-	var environment:=WorldEnvironment.new()
-	environment.environment=env
-	add_child(environment)
-	var sun:=light
-	sun.light_color=Color("#fff3e3")
-	sun.light_energy=1.15
-	sun.shadow_enabled=true
-	sun.directional_shadow_max_distance=900
-	sun.directional_shadow_mode=DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_blend_splits=true
-	sun.shadow_bias=.035
-	sun.shadow_normal_bias=.85
-	sun.rotation_degrees=Vector3(-37,-133,0)
-	sun.light_angular_distance=.35
-	add_child(sun)
 func _process(delta:float) -> void:
 	remainder+=delta*TICKS_PER_SECOND*speed
 	var ticks:=int(remainder)
@@ -208,7 +173,9 @@ func _sync() -> void:
 				angle_origin=orbit.pivot
 				observer_angle=_clear_angle(orbit.pivot,observer_angle,Vector3.ZERO)
 			orbit.update_view()
-	town.sync(state,remainder)
+	weather=model.weather(remainder)
+	weather_view.sync(weather,state.tick+remainder,orbit)
+	town.sync(state,remainder,weather_view.lamps)
 	transit.sync(model,town,remainder)
 	if following_bus>=0:
 		var at:int=transit.service.buses[following_bus].stop
@@ -219,7 +186,8 @@ func _sync() -> void:
 			observer_angle=_clear_angle(bus.position+Vector3.UP*1.45,observer_angle,bus.global_basis.x*2.4)
 		orbit.pivot=transit.buses[following_bus].position+Vector3.UP*1.45
 		orbit.update_view()
-	people.sync(model,orbit,state,remainder,selected)
+	people.sync(model,orbit,state,remainder,selected,weather.rain)
+	hud.show_weather(weather_view.phase_name,weather_view.condition)
 	hud.display(state,speed,orbit.azimuth)
 	hud.sync_map(model,state.roads,state.buildings)
 	if green_id>=0:
@@ -231,18 +199,20 @@ func _sync() -> void:
 	hud.show_transit(transit.network,transit.service,following_bus,info)
 	if business_id<0 and not manifests.is_empty(): business_id=manifests[0].shop
 	trade.sync(model,state,manifests,remainder,following_van,business_id)
+	weather_view.light_traffic(orbit,transit,trade)
 	hud.show_trade(model,model.business(business_id),run,manifests.size(),state.tick)
-	var sun_height:=sin((state.minute-360.)/1440.*TAU)
-	var daylight:=smoothstep(-.08,.38,sun_height)
-	light.light_energy=lerpf(.12,1.02,daylight)
-	light.rotation_degrees=Vector3(-lerpf(16.,57.,maxf(0.,sun_height)),-118.+(state.minute-465)*.135,0)
-	light.directional_shadow_max_distance=clampf(orbit.extent*2.8,95.,1700.)
-	atmosphere.fog_light_energy=lerpf(.06,.80,daylight)
-	atmosphere.background_energy_multiplier=lerpf(.08,.80,daylight)
-	if town.Forms.built_material: town.Forms.built_material.set_shader_parameter("night",1.-daylight)
-	light.light_color=Color("#a5c2df").lerp(Color("#fff3e3"),daylight)
-	atmosphere.ambient_light_color=Color("#cbd5df")
-	atmosphere.ambient_light_energy=lerpf(.20,.58,daylight)
+	var elapsed_minutes:float=(state.tick+remainder)/4.
+	var surfaces:ShaderMaterial=town.Forms.built_material
+	if surfaces:
+		surfaces.set_shader_parameter("night",weather_view.lamps)
+		surfaces.set_shader_parameter("wetness",weather.wetness)
+		surfaces.set_shader_parameter("rain",weather.rain)
+		surfaces.set_shader_parameter("clouds",weather.clouds)
+		surfaces.set_shader_parameter("cloud_scroll",weather_view.CLOUD_DRIFT*elapsed_minutes)
+		surfaces.set_shader_parameter("wave_time",fposmod(elapsed_minutes,1000.))
+	land.water_material.set_shader_parameter("wave_time",fposmod(elapsed_minutes,TAU*100.))
+	land.water_material.set_shader_parameter("rain",weather.rain)
+	land.water_material.set_shader_parameter("wind",weather.wind)
 
 func _toggle_construction() -> void:
 	_leave_green()
@@ -407,6 +377,27 @@ func _pick_green(screen:Vector2) -> int:
 		var hit=Plane(Vector3.UP,green.pos.y+.32).intersects_ray(origin,ray)
 		if hit!=null and hit.distance_to(green.pos)<green.radius and people._in_sight(orbit,hit+Vector3.UP*.35,town.sites): return id
 	return -1
+
+func _skyline() -> void:
+	_leave_site()
+	following_van=-1
+	watching=false
+	selected=-1
+	hud.district_title="City skyline"
+	var bounds:Vector4=state.bounds
+	var x:=lerpf(bounds.x,bounds.z,.50)
+	var z:=lerpf(bounds.y,bounds.w,.46)
+	orbit.following=false
+	orbit.pivot=Vector3(x,model.height_at(x,z)+6.,z)
+	orbit.elevation=.145
+	orbit.extent=clampf((bounds.z-bounds.x)*.48,62.,210.)
+	var solar:Vector3=weather.sun
+	orbit.azimuth=atan2(-solar.x,-solar.z)+.10
+	orbit.update_view()
+	var lift:float=model.height_at(orbit.position.x,orbit.position.z)+4.-orbit.position.y
+	if lift>0.:
+		orbit.pivot.y+=lift
+		orbit.update_view()
 
 func _street_view() -> void:
 	_district_view(1)
@@ -573,6 +564,7 @@ func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_M: map_requested.emit()
+			KEY_W: _skyline()
 			KEY_B: _watch_bus()
 			KEY_P: _visit_green()
 			KEY_G: _toggle_construction()

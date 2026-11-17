@@ -9,6 +9,41 @@
     if (!(expr))                                                               \
       throw std::runtime_error(#expr);                                         \
   } while (false)
+void check_weather() {
+  using namespace city;
+  auto at = [](int seed, double lat, double minute) {
+    return weather_at(seed, lat, (minute - opening_minute) * ticks_per_minute);
+  };
+  auto morning = at(147, 45., 420), evening = at(147, 45., 1020);
+  CHECK(morning.sun_east > .8 && evening.sun_east < -.8);
+  CHECK(at(147, 45., 720).sun_up > .65 && at(147, 45., 1440).sun_up < -.65);
+  CHECK(at(147, 45., 720).sun_south > 0 && at(147, -45., 720).sun_south < 0);
+  CHECK(at(147, 80., 91 * 1440.).sun_up > 0 &&
+        at(147, -80., 91 * 1440. + 720.).sun_up < 0);
+  bool clear = false, overcast = false, storm = false, drying = false;
+  for (int minute = 0; minute < 8 * 1440; minute += 5) {
+    const auto w = at(147, 45., minute);
+    CHECK(std::abs(w.sun_east * w.sun_east + w.sun_up * w.sun_up +
+                   w.sun_south * w.sun_south - 1.) < 1e-10);
+    CHECK(w.rain >= 0 && w.rain <= 1 && w.wetness >= w.rain && w.wetness <= 1.);
+    clear |= w.clouds < .15;
+    overcast |= w.clouds > .63 && w.rain < .045;
+    storm |= w.rain > .5;
+    drying |= w.wetness > .08 && w.rain < .01;
+    const auto next = at(147, 45., minute + .01);
+    CHECK(std::abs(next.rain - w.rain) < .002 &&
+          std::abs(next.wetness - w.wetness) < .002);
+  }
+  CHECK(clear && overcast && storm && drying);
+  City c;
+  c.advance(3010);
+  const auto digest = c.digest();
+  const auto w = c.weather(.45);
+  CHECK(c.digest() == digest && w.rain == weather_at(147, 45., 3010.45).rain);
+  CHECK(w.clouds != weather_at(148, 45., 3010.45).clouds);
+  const auto saved = restore(checkpoint(c));
+  CHECK(saved && saved->weather(.45).wetness == w.wetness);
+}
 void check_facilities() {
   using namespace city;
   City c;
@@ -163,6 +198,7 @@ void check_geographic_terrain() {
   CHECK(site.suitable());
   CHECK(std::abs(site.height({10, 10}) - 8.15) < 1e-8);
   City inland(31, site), fixture(31);
+  CHECK(inland.weather().sun_up == weather_at(31, site.latitude, 0).sun_up);
   CHECK(inland.height({40, 80}) != fixture.height({40, 80}));
   for (const auto &r : inland.roads())
     for (auto p : r.path)
@@ -269,6 +305,7 @@ void check_construction() {
 
 int main() {
   using namespace city;
+  check_weather();
   check_facilities();
   check_commuting();
   check_geographic_terrain();

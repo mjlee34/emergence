@@ -25,6 +25,7 @@ var greens:Array[Node3D]=[]
 var landscaping:Array[Node3D]=[]
 var street_lights:=Node3D.new()
 var last_light_tick:=-1
+var lamp_level:=-1.
 
 func create(sim, landscape) -> void:
 	model=sim
@@ -60,7 +61,7 @@ func create(sim, landscape) -> void:
 		g.box(Vector3(2.094,.53,0),Vector3(.026,.16,.60),Color("#515557"))
 		car_meshes.append(g.mesh())
 
-func sync(state: Dictionary, fraction: float) -> void:
+func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 	var time:float=state.tick+fraction
 	while greens.size()<state.facilities:
 		var space:=preload("res://scripts/green_space.gd").new()
@@ -113,7 +114,10 @@ func sync(state: Dictionary, fraction: float) -> void:
 		if work.advance(time,state.construction_ticks):
 			work.queue_free()
 			construction.erase(id)
-	street_lights.visible=state.minute>=1080 or state.minute<390
+	street_lights.visible=lamps>.01
+	if street_lights.visible and (absf(lamps-lamp_level)>.012 or lamp_level<0.):
+		lamp_level=lamps
+		for bulb in street_lights.get_children(): bulb.light_energy=3.7*lamps
 	if street_lights.visible and state.tick!=last_light_tick:
 		last_light_tick=state.tick
 		for i in buildings:
@@ -284,9 +288,9 @@ func _street(data:Dictionary,pending:bool,id:int) -> void:
 		var bulb:=OmniLight3D.new()
 		bulb.position=lamp-Vector3.UP*.24
 		bulb.light_color=Color("#ffd4a0")
-		bulb.light_energy=2.7
-		bulb.omni_range=13.
-		bulb.omni_attenuation=1.35
+		bulb.light_energy=3.7*maxf(0.,lamp_level)
+		bulb.omni_range=16.
+		bulb.omni_attenuation=1.12
 		bulb.distance_fade_enabled=true
 		bulb.distance_fade_begin=130
 		bulb.distance_fade_length=65
