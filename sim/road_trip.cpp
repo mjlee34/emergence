@@ -2,21 +2,24 @@
 #include <algorithm>
 #include <cmath>
 namespace city {
-namespace {
-int entrance(const City &c, int lot) {
+RoadCurb building_curb(const City &c, int lot) {
   auto &b = c.buildings()[lot];
   auto &r = c.roads()[b.frontage];
-  return distance(r.path[2], b.pos) < distance(r.path[6], b.pos) ? 2 : 6;
+  return {b.frontage,
+          distance(r.path[2], b.pos) < distance(r.path[6], b.pos) ? 2 : 6,
+          b.pos};
 }
-} // namespace
 std::vector<DriveLeg> drive_route(const City &c, int origin, int target,
                                   double speed) {
+  return drive_route(c, building_curb(c, origin), building_curb(c, target),
+                     speed);
+}
+std::vector<DriveLeg> drive_route(const City &c, RoadCurb origin,
+                                  RoadCurb target, double speed) {
   std::vector<DriveLeg> legs;
-  int first = c.buildings()[origin].frontage,
-      last = c.buildings()[target].frontage;
+  int first = origin.edge, last = target.edge;
   const auto &a = c.roads()[first], &b = c.roads()[last];
-  double start = a.lengths[entrance(c, origin)],
-         end = b.lengths[entrance(c, target)];
+  double start = a.lengths[origin.sample], end = b.lengths[target.sample];
   double time = 0;
   auto leg = [&](int edge, double from, double to) {
     if (std::abs(to - from) < .001)
@@ -24,9 +27,9 @@ std::vector<DriveLeg> drive_route(const City &c, int origin, int target,
     time += std::abs(to - from) / (speed * speed_factor(c.roads()[edge].type));
     legs.push_back({edge, from, to, time});
   };
-  auto curb_forward = [&](const Road &r, int lot) {
-    int k = entrance(c, lot);
-    auto p = r.path[k], q = r.path[k + 1], door = c.buildings()[lot].pos;
+  auto curb_forward = [&](const Road &r, RoadCurb curb) {
+    int k = curb.sample;
+    auto p = r.path[k], q = r.path[k + 1], door = curb.door;
     return (q.x - p.x) * (door.z - p.z) - (q.z - p.z) * (door.x - p.x) > 0;
   };
   bool depart_forward = curb_forward(a, origin),

@@ -15,8 +15,8 @@ var bus_line:=PackedVector2Array()
 var bus_dots:=PackedVector2Array()
 var bus_point:=Vector2.ZERO
 signal meet_requested
-signal parks_requested
-var parks_button:=Button.new()
+signal place_requested(id:int)
+var parks_button:=MenuButton.new()
 var green_dots:=PackedVector2Array()
 var green_types:=PackedInt32Array()
 signal district_requested(use:int)
@@ -144,11 +144,11 @@ func _ready() -> void:
 		b.tooltip_text="Visit a "+["residential street","shopping street","workshop yard"][i]
 		b.pressed.connect(func(): district_requested.emit(i))
 		districts.add_child(b)
-	parks_button.text="Parks"
-	parks_button.tooltip_text="Visit the next park or playground (P)"
+	parks_button.text="Places"
+	parks_button.tooltip_text="Explore parks, public services and landmarks (P)"
 	_style_button(parks_button,false)
 	districts.add_child(parks_button)
-	parks_button.pressed.connect(func(): parks_requested.emit())
+	parks_button.get_popup().id_pressed.connect(func(id:int): place_requested.emit(id))
 	meet_button.text="Meet a resident"
 	_style_button(meet_button,false)
 	var observers:=HBoxContainer.new()
@@ -290,7 +290,7 @@ func show_life(data:Dictionary,resident:Dictionary,model,bus_view:=false) -> voi
 		var given:=["Mina","Theo","Iris","Leon","Ari","Ella","Milo","Ren","Nora","Emil","Sam","Lina","Alex","Noa","Rae","Kai"]
 		var family:=["Park","Reed","Chen","Hill","Baek","Ford","Kim","Bell","Tan","Cole","Shaw","Ito","Yu","Moon","West","Gray"]
 		identity.text="%s %s  ·  #%d"%[given[v%16],family[(v>>8)%16],resident.id+1]
-		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to","Waiting for Line 1 to","On Line 1 to","Driving to","Visiting"][resident.activity]
+		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to","Waiting for Line 1 to","On Line 1 to","Driving to","Visiting","In class at"][resident.activity]
 		var workplace:="Seeking work" if resident.seeking else "Outside workforce"
 		if resident.child: workplace="Child"
 		if resident.work>=0:
@@ -435,6 +435,10 @@ func sync_map(sim,count:int,buildings:int) -> void:
 		var green:Dictionary=sim.facility(green_dots.size())
 		green_dots.append(Vector2(green.pos.x,green.pos.z))
 		green_types.append(green.kind)
+		var popup:=parks_button.get_popup()
+		var caption:="%s  ·  %d"%[green.name,green_types.count(green.kind)]
+		popup.add_item(caption,green_types.size()-1)
+		if green.kind>=6: popup.set_item_text(popup.item_count-1,"★  "+green.name)
 		queue_redraw()
 	parks_button.disabled=green_dots.is_empty()
 	if map_paths.size()==count and land_dots.size()==buildings: return
@@ -487,7 +491,9 @@ func _draw_plan() -> void:
 		var dot:=green_dots[i]
 		var r:=4./scale_factor
 		draw_circle(dot,r,INK)
-		draw_circle(dot,r*.76,Color("#a3cd66") if green_types[i]==0 else Color("#f39a75"))
+		var colors:=[Color("#a3cd66"),Color("#f39a75"),Color("#f8cb67"),Color("#79d9cb"),Color("#ee705b"),Color("#86b6f0"),Color("#ffe9a7"),Color("#ffe9a7")]
+		draw_circle(dot,r*.76,colors[green_types[i]])
+		if green_types[i]>=6: draw_arc(dot,r*1.4,0,TAU,16,colors[green_types[i]],1.2/scale_factor,true)
 	if bus_line.size()>1:
 		draw_polyline(bus_line,Color("#77dfe1"),2.7/scale_factor,true)
 		for p in bus_dots: draw_circle(p,2.5/scale_factor,IVORY)

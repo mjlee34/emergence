@@ -322,6 +322,69 @@ void check_construction() {
   CHECK(city.events().back().text == "Street opened to traffic");
 }
 
+void check_public_places() {
+  using namespace city;
+  City c(0);
+  c.advance(60000);
+  std::set<FacilityKind> services;
+  for (auto &f:c.facilities()) {
+    if (!is_service(f.kind)) continue;
+    services.insert(f.kind);
+    CHECK(f.catchment>0 && f.opens<=c.tick());
+  }
+  CHECK(services.size()==4);
+  bool in_class=false;
+  for (int id=0;id<c.population();++id) {
+    const auto &p=c.life().people()[id];
+    if(p.school<0) continue;
+    CHECK(p.child && c.facilities()[p.school].kind==FacilityKind::School);
+    int day=std::max(p.first_day,p.school_day);
+    while(day%7>=5) ++day;
+    auto at=[&](double minute){ return c.life().routine(id,
+      (day*minutes_per_day+minute-opening_minute)*ticks_per_minute); };
+    auto walk=at(p.class_start-p.school_walk*.5), back=at(p.class_start+120.+p.school_walk*.5);
+    CHECK(walk.activity==Activity::Walking && walk.facility==p.school && !walk.reverse);
+    CHECK(at(p.class_start+30.).activity==Activity::School);
+    CHECK(back.activity==Activity::Walking && back.reverse);
+    CHECK(distance(c.life().paths()[walk.route].points.back().pos,c.facilities()[p.school].gate)<.01);
+    in_class=true;
+  }
+  CHECK(in_class);
+  std::set<FacilityKind> responding;
+  for(int i=0;i<120;++i) {
+    c.advance(60);
+    std::set<int> busy;
+    for(const auto &call:c.responses()) {
+      const auto &station=c.facilities()[call.station];
+      CHECK(busy.insert(call.station).second && station.opens<=call.start);
+      CHECK(call.outward.front().edge==station.frontage && call.returning.back().edge==station.frontage);
+      CHECK(call.outward.back().edge==c.buildings()[call.lot].frontage);
+      for(const auto &leg:call.outward) CHECK(c.roads()[leg.edge].opens<=call.start);
+      CHECK(call.start<=call.arrival && call.arrival<call.leaving && call.leaving<=call.end);
+      responding.insert(station.kind);
+    }
+  }
+  CHECK(responding.size()==3);
+  auto inspect=[](const City &city, FacilityKind expected) {
+    int total=0;
+    for(const auto &f:city.facilities()) if(is_landmark(f.kind)) {
+      ++total;
+      CHECK(f.kind==expected && f.started>=24*minutes_per_day*ticks_per_minute);
+      CHECK(city.site().elevation(f.center)>1.4 && !city.site().inland_water(f.center));
+      if(expected==FacilityKind::Statue) CHECK(std::abs(f.center.x-river_center(f.center.z))<60.);
+      if(expected==FacilityKind::Tower)
+        CHECK(std::any_of(city.roads().begin(),city.roads().end(),[&](auto &r){
+          return r.type==RoadClass::Arterial && distance(r.path[4],f.center)<100.; }));
+    }
+    CHECK(total==1);
+  };
+  c.advance(320000-c.tick());
+  inspect(c,FacilityKind::Statue);
+  City other(2);
+  other.advance(200000);
+  inspect(other,FacilityKind::Tower);
+}
+
 int main() {
   using namespace city;
   check_weather();
@@ -330,6 +393,7 @@ int main() {
   check_geographic_terrain();
   check_market();
   check_construction();
+  check_public_places();
   auto start = std::chrono::steady_clock::now();
   for (auto seed : {147u, 42u, 2026u}) {
     City a(seed), b(seed);
@@ -374,6 +438,8 @@ int main() {
   regional.advance(9600 * planning_interval);
   CHECK(regional.bounds()[2] - regional.bounds()[0] > 3. * initial_span);
   CHECK(regional.renewals().size() > 0);
+  CHECK(std::none_of(regional.facilities().begin(), regional.facilities().end(),
+                     [](const auto &f) { return is_landmark(f.kind); }));
   bool tall = false, industrial = false;
   int banks[2] = {};
   for (const auto &b : regional.buildings()) {

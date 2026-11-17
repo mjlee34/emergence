@@ -350,7 +350,39 @@ void Life::plan_travel(const City &c, Resident &r, double walking) {
   else
     r.outing_return = start + r.trips[0].duration + 45.;
 }
+void Life::assign_school(const City &c, Resident &r, int id) {
+  const auto &f = c.facilities()[id];
+  if (!r.child || f.opens > c.tick() || distance(f.center, c.buildings()[r.home].pos) > 145.)
+    return;
+  auto [it, fresh] = green_paths_.emplace(std::pair{r.home, id}, int(paths_.size()));
+  if (fresh)
+    paths_.push_back(connect(c, entrance(c,r.home),
+        {f.frontage,f.sample,f.side,{f.gate,c.height(f.gate)+.34}}));
+  double length = paths_[it->second].lengths.back();
+  if (length > 145. || (r.school >= 0 && paths_[r.school_path].lengths.back() <= length)) return;
+  double walk = std::max(1.,length / 3.);
+  // Fit a class between the child's existing household errands and visits.
+  auto overlaps = [](double a,double b,double start,double end) { return a<end && b>start; };
+  for (double start : {540.,690.,840.}) {
+    double leave=start-walk, back=start+120.+walk;
+    if (r.shop>=0 && overlaps(leave,back,405.+r.variation%545,r.outing_return+r.trips[1].duration)) continue;
+    if (r.facility>=0 && overlaps(leave,back,r.visit_start,r.visit_start+2.*r.visit_walk+r.visit_stay)) continue;
+    r.school=id;
+    r.school_path=it->second;
+    r.school_walk=walk;
+    r.class_start=start;
+    int absolute=c.tick()/ticks_per_minute+opening_minute;
+    r.school_day=absolute/minutes_per_day+(absolute%minutes_per_day>=leave);
+    return;
+  }
+}
 void Life::open_facility(const City &c, int id) {
+  if (is_service(c.facilities()[id].kind)) {
+    if (c.facilities()[id].kind == FacilityKind::School)
+      for (auto &r : residents_)
+        if (r.school < 0) assign_school(c, r, id);
+    return;
+  }
   for (auto &r : residents_)
     if (r.facility < 0 &&
         distance(c.facilities()[id].center, c.buildings()[r.home].pos) < 112.)
@@ -363,7 +395,7 @@ void Life::plan_visit(const City &c, Resident &r) {
   double best = 140.;
   for (int i = 0; i < int(c.facilities().size()); ++i) {
     const auto &f = c.facilities()[i];
-    if (f.opens > c.tick() ||
+    if (is_service(f.kind) || f.opens > c.tick() ||
         distance(f.center, c.buildings()[r.home].pos) >= 112.)
       continue;
     auto [it, added] =
@@ -402,6 +434,11 @@ void Life::plan_visit(const City &c, Resident &r) {
     return;
   }
   r.visit_start = early + (late - early) * ((r.variation >> 16) % 1000) / 999.;
+  if (r.school>=0 && r.visit_start<r.class_start+120.+r.school_walk &&
+      r.visit_start+total>r.class_start-r.school_walk) {
+    r.facility=-1;
+    return;
+  }
   if (r.child && c.facilities()[r.facility].kind == FacilityKind::Playground) {
     double arrived = r.visit_start + r.visit_walk;
     for (int slot = int(std::ceil((arrived + 4.) / 4.));
@@ -451,6 +488,9 @@ void Life::settle(const City &c) {
           minute / minutes_per_day + (minute % minutes_per_day >= departure);
     }
     plan_visit(c, r);
+    if (r.child)
+      for (int f=0; f<int(c.facilities().size()); ++f)
+        if (c.facilities()[f].kind==FacilityKind::School) assign_school(c,r,f);
     residents_.push_back(r);
   }
 }
@@ -476,6 +516,16 @@ DailyState Life::routine(int id, double tick) const {
   };
   if (int(absolute / minutes_per_day) < r.first_day)
     return stay(Activity::Home, r.home);
+  int day = int(absolute / minutes_per_day);
+  if (r.school>=0 && day>=r.school_day && day%7<5 &&
+      t>=r.class_start-r.school_walk && t<r.class_start+120.+r.school_walk) {
+    DailyState s{Activity::Walking,r.home,r.home,r.school_path};
+    s.facility=r.school;
+    if (t<r.class_start) s.progress=1.+(t-r.class_start)/r.school_walk;
+    else if (t<r.class_start+120.) s.activity=Activity::School;
+    else { s.reverse=true; s.progress=(t-r.class_start-120.)/r.school_walk; }
+    return s;
+  }
   if (r.facility >= 0 && int(absolute / minutes_per_day) >= r.visit_day &&
       t >= r.visit_start &&
       (int(absolute / minutes_per_day) + int(r.variation >> 28)) % 2 == 0) {
@@ -578,6 +628,10 @@ DailyState Life::routine(int id, double tick) const {
 }
 PersonPose Life::pose(const City &c, int id, const DailyState &s,
                       double tick) const {
+  if (s.activity == Activity::School) {
+    const auto &f=c.facilities()[s.facility];
+    return {f.center,c.height(f.center)+.34,f.yaw};
+  }
   if (s.activity == Activity::Leisure) {
     const auto &f = c.facilities()[s.facility];
     // Enter at the gate, stroll around the planted court, and leave through the
@@ -708,7 +762,8 @@ uint64_t Life::digest() const {
   for (const auto &r : residents_) {
     for (int v : {r.home, r.work, r.shop, r.first_day, r.commute, r.errand,
                   int(r.mode), r.trips[0].bus.run, r.trips[1].bus.run,
-                  r.facility, r.leisure_path, r.visit_day, r.slide_slot}) {
+                  r.facility, r.leisure_path, r.visit_day, r.slide_slot,
+                  r.school, r.school_path, r.school_day}) {
       h ^= uint32_t(v);
       h *= 1099511628211ULL;
     }

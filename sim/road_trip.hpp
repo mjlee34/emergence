@@ -14,6 +14,13 @@ struct VanPose {
   Point position;
   double height, yaw;
 };
+struct RoadCurb {
+  int edge, sample;
+  Point door;
+};
+RoadCurb building_curb(const City &city, int lot);
+std::vector<DriveLeg> drive_route(const City &city, RoadCurb origin,
+                                  RoadCurb target, double speed);
 std::vector<DriveLeg> drive_route(const City &city, int origin, int target,
                                   double speed);
 VanPose drive_pose(const City &city, const std::vector<DriveLeg> &route,

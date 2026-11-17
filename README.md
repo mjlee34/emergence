@@ -31,7 +31,7 @@ The simulation starts at **1×** with one local minute passing per real second. 
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
 | Watch the skyline toward the sun | W or the weather indicator beneath the place name |
-| Visit parks and playgrounds and view current attendance | P, Parks, or click the grounds |
+| Visit parks, public services and landmarks | Places menu, P to cycle, or click the grounds |
 | Follow the nearest active construction project | G or Construction |
 | Follow a resident | Click a pedestrian or private car, or choose Meet a resident |
 | Follow Line 1 and see its next stop, queue and load | B, Follow bus, or click a bus |
@@ -100,6 +100,14 @@ The municipal planner looks for homes with poor walking access to an existing ga
 
 Each site opens after 180 city minutes of landscaping. Residents fit walks into free time around work and shopping, linger along the garden path and return home. Some residents are children throughout this prototype. Children walk to play areas and take turns climbing the ladder and using the slide. Press **P** to cycle between facilities. The district map marks parks in green and playgrounds in coral.
 
+### Schools, emergency services and landmarks
+
+Every two simulation days the city surveys neighbourhoods without road access to a service. School demand counts children, hospital demand counts residents, and industrial and commercial employment influence fire and police coverage. A new station enters service after construction. The Places menu shows the selected facility’s catchment, school attendance or completed calls.
+
+Children within walking distance can attend a weekday two-hour class that fits around their other trips. Each hospital, fire station and police station operates one vehicle. For a simulated call at an occupied building, the available station with the fastest road route sends its vehicle to the scene and back. Calls are simulated service requests. Disease, fire spread and crime outcomes are outside this slice.
+
+One in five seeds qualifies for a landmark. After 24 days and 12,000 residents, the planner looks for a well-used street with an open view across water, or a major street axis near a civic space. An eligible city may grow without finding a site. A city can build one monument. The Beacon of Liberty faces the water and the lattice observation tower overlooks its urban approach. [Six in-game views](captures/civic-places.jpg)
+
 ### Local trade
 
 Food producers supply bakeries, cafés and grocers. Textile mills supply outfitters. Each open business has its own inventory and cash account. Staff on shift earn staggered hourly payments from their employer’s till, and staffed workshops pack goods up to their storage limit. Residents with enough money buy one item during a shop visit. A successful sale transfers $12, removes one item from the shelf, and gives the shopper a receipt and a shopping bag.
@@ -132,7 +140,7 @@ The historical lunch capture used resident #1301 at tick 1110. Current assignmen
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 8 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 9 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 

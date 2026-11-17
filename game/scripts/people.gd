@@ -159,6 +159,7 @@ func sync(model,orbit,state:Dictionary,fraction:float,selected:int,rain:float) -
 		var r:Dictionary=model.resident(selected,fraction)
 		var b:Dictionary=model.lot(r.target)
 		marker.position=r.position+Vector3.UP*(3.45 if r.activity==5 else 1.96) if r.activity in [5,6] else b.pos+Vector3.UP*.49
+		if r.activity==8: marker.position=r.position+Vector3.UP*.49
 		marker.scale=Vector3(1.22,.65,1.22) if r.activity in [5,6] else Vector3(7.,1.,7.)
 		marker.visible=true
 

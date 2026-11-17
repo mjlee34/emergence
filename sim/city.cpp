@@ -391,13 +391,17 @@ void City::advance(int ticks) {
     if (tick_ % (48 * planning_interval) == 0 &&
         (access_changed_ || surveyed_population_ != population_))
       plan_facilities();
+    if (tick_ % (192 * planning_interval) == 0)
+      plan_public_sites();
+    bool service_opened = false;
     for (size_t f = 0; f < facilities_.size(); ++f)
       if (facilities_[f].opens == tick_) {
         life_.open_facility(*this, int(f));
-        record(facilities_[f].kind == FacilityKind::Park
-                   ? "Neighbourhood park opened"
-                   : "Playground opened");
+        service_opened |= is_service(facilities_[f].kind);
+        record(std::string(facility_name(facilities_[f].kind)) + " opened");
       }
+    if (service_opened) plan_public_sites(false);
+    dispatch_services();
     economy_.update(*this);
   }
 }
@@ -418,6 +422,8 @@ uint64_t City::digest() const {
   }
   for (const auto &f : facilities_) {
     mix(int(f.kind));
+    mix(f.catchment);
+    mix(f.responses);
     mix(f.frontage);
     mix(f.sample);
     mix(f.side);
@@ -426,6 +432,7 @@ uint64_t City::digest() const {
     mix(f.started);
     mix(f.opens);
   }
+  for (const auto &r : responses_) { mix(r.station); mix(r.lot); mix(r.start); mix(r.end); }
   mix(life_.digest());
   mix(economy_.digest());
   mix(seed_);

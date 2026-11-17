@@ -17,7 +17,8 @@ enum class Activity {
   Waiting,
   Riding,
   Driving,
-  Leisure
+  Leisure,
+  School
 };
 enum class Mode { Walk, Car, Bus };
 struct CommuteLeg {
@@ -37,6 +38,8 @@ struct Resident {
   Mode mode = Mode::Walk;
   bool car_owner = false, child = false;
   int slide_slot = -1;
+  int school = -1, school_path = -1, school_day = 0;
+  double class_start = 0., school_walk = 0.;
   std::array<CommuteLeg, 2> trips;
 };
 struct DailyState {
@@ -80,6 +83,7 @@ private:
   std::vector<Resident> residents_;
   std::map<std::pair<int, int>, int> green_paths_;
   std::set<std::array<int, 3>> slide_slots_;
+  void assign_school(const City &city, Resident &resident, int school);
   void plan_visit(const City &city, Resident &resident);
   void plan_travel(const City &city, Resident &r, double walking);
   BusTrip bus_option(const City &city, int a, int b, double start, double pace);

@@ -40,12 +40,22 @@ struct Building {
   int frontage, floors;
   int previous_floors = 0;
 };
-enum class FacilityKind { Park, Playground };
+enum class FacilityKind { Park, Playground, School, Hospital, Fire, Police, Tower, Statue };
+const char *facility_name(FacilityKind kind);
+inline bool is_service(FacilityKind k) {
+  return k >= FacilityKind::School && k <= FacilityKind::Police;
+}
+inline bool is_landmark(FacilityKind k) { return k >= FacilityKind::Tower; }
 struct Facility {
   FacilityKind kind;
   Point center, gate;
   double yaw, radius;
   int frontage, sample, side, started, opens;
+  int catchment = 0, responses = 0;
+};
+struct Response {
+  int station, lot, start, arrival, leaving, end;
+  std::vector<DriveLeg> outward, returning;
 };
 struct Vehicle {
   int edge, from, destination;
@@ -79,6 +89,7 @@ public:
   std::vector<Vehicle> vehicles() const;
   const auto &renewals() const { return renewals_; }
   const auto &bounds() const { return bounds_; }
+  const auto &responses() const { return responses_; }
   const auto &events() const { return events_; }
   Point vehicle_position(const Vehicle &car, double &yaw,
                          double fraction = 0) const;
@@ -101,6 +112,9 @@ private:
   bool access_changed_ = false;
   int surveyed_population_ = 0;
   void plan_facilities();
+  void plan_public_sites(bool allow_building = true);
+  std::vector<Response> responses_;
+  void dispatch_services();
   struct TravelDemand {
     double visits = 0, east_west = 0, north_south = 0;
   };

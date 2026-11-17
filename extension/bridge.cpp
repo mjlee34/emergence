@@ -32,6 +32,7 @@ protected:
     ClassDB::bind_method(D_METHOD("business", "id"), &CityModel::business);
     ClassDB::bind_method(D_METHOD("delivery_route", "id"),
                          &CityModel::delivery_route);
+    ClassDB::bind_method(D_METHOD("responders", "fraction"), &CityModel::responders);
     ClassDB::bind_method(D_METHOD("freight", "fraction"), &CityModel::freight);
     ClassDB::bind_method(D_METHOD("weather", "fraction"), &CityModel::weather);
     ClassDB::bind_method(D_METHOD("summary"), &CityModel::summary);
@@ -90,7 +91,7 @@ public:
     d["minute"] = absolute % city::minutes_per_day;
     d["day"] = 1 + absolute / city::minutes_per_day;
     d["construction_ticks"] = city::construction_ticks;
-    std::array<int, 8> totals{};
+    std::array<int, 9> totals{};
     PackedInt32Array visitors;
     visitors.resize(state.facilities().size());
     PackedInt32Array occupants;
@@ -99,7 +100,7 @@ public:
     for (int id = 0; id < state.population(); ++id) {
       auto action = life.routine(id, state.tick());
       ++totals[int(action.activity)];
-      if (action.activity == city::Activity::Leisure)
+      if (action.activity == city::Activity::Leisure || action.activity == city::Activity::School)
         ++visitors.ptrw()[action.facility];
       if (int(action.activity) < int(city::Activity::Walking))
         ++occupants.ptrw()[action.to];
@@ -215,7 +216,7 @@ public:
       auto s = life.routine(id, state.tick() + fraction);
       const auto &b = state.buildings()[s.to];
       bool walking = s.activity == city::Activity::Walking;
-      if (s.activity == city::Activity::Riding ||
+      if (s.activity == city::Activity::Riding || s.activity == city::Activity::School ||
           s.activity == city::Activity::Driving)
         return;
       const bool indoors = !walking && s.activity != city::Activity::Waiting &&
@@ -308,6 +309,23 @@ public:
     }
     return path;
   }
+  Array responders(double fraction) const {
+    Array rows;
+    double now=state.tick()+fraction;
+    for (const auto &call:state.responses()) {
+      bool returning=now>=call.leaving;
+      auto p=city::drive_pose(state,returning?call.returning:call.outward,
+          returning?now-call.leaving:std::min(now-double(call.start),call.outward.back().end_time),1.);
+      Dictionary row;
+      row["station"]=call.station;
+      row["kind"]=int(state.facilities()[call.station].kind);
+      row["position"]=Vector3(p.position.x,p.height+.32,p.position.z);
+      row["yaw"]=p.yaw;
+      row["on_scene"]=now>=call.arrival && !returning;
+      rows.push_back(row);
+    }
+    return rows;
+  }
   Array freight(double fraction) const {
     Array rows;
     for (auto &s : state.economy().shipments()) {
@@ -383,8 +401,9 @@ public:
     ERR_FAIL_INDEX_V(id, int(state.facilities().size()), d);
     const auto &f = state.facilities()[id];
     d["kind"] = int(f.kind);
-    d["name"] = f.kind == city::FacilityKind::Park ? "Neighbourhood park"
-                                                   : "Neighbourhood playground";
+    d["name"] = city::facility_name(f.kind);
+    d["catchment"] = f.catchment;
+    d["responses"] = f.responses;
     d["pos"] = surface(f.center);
     d["gate"] = surface(f.gate);
     const auto &road = state.roads()[f.frontage];

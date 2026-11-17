@@ -110,7 +110,7 @@ func _ready() -> void:
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
 	hud.skyline_requested.connect(_skyline)
-	hud.parks_requested.connect(_visit_green)
+	hud.place_requested.connect(_visit_green)
 	hud.bus_requested.connect(_watch_bus)
 	hud.meet_requested.connect(_meet)
 	hud.construction_requested.connect(_toggle_construction)
@@ -176,6 +176,12 @@ func _sync() -> void:
 	weather=model.weather(remainder)
 	weather_view.sync(weather,state.tick+remainder,orbit)
 	town.sync(state,remainder,weather_view.lamps)
+	var calls:Dictionary={}
+	for call in model.responders(remainder): calls[call.station]=call
+	for id in town.greens.size():
+		var site=town.greens[id]
+		if site.data.kind in [3,4,5] and (site.on_call or calls.has(id)):
+			site.move_responder(calls.get(id,{}),state.tick+remainder)
 	transit.sync(model,town,remainder)
 	if following_bus>=0:
 		var at:int=transit.service.buses[following_bus].stop
@@ -194,7 +200,14 @@ func _sync() -> void:
 		var green:Dictionary=town.greens[green_id].data
 		var visitors:int=state.visitors[green_id]
 		hud.district_title=green.name
-		hud.construction_note=("%d visiting now  ·  Open to the neighbourhood"%visitors) if state.tick>=green.opens else "Landscaping in progress"
+		hud.construction_note=("%d visiting now  ·  Open to the neighbourhood"%visitors) if state.tick>=green.opens else "Construction in progress"
+		if green.kind in [2,3,4,5] and state.tick>=green.opens:
+			var reach:int=model.facility(green_id).catchment
+			hud.construction_note=("%d pupils within reach  ·  %d in class"%[reach,visitors]) if green.kind==2 else ("%d residents within reach"%reach if green.kind==3 else "%d residents and jobs within reach"%reach)
+			if green.kind!=2:
+				var phase:="Available"
+				if calls.has(green_id): phase="On scene" if calls[green_id].on_scene else "Unit on the road"
+				hud.construction_note+="\n%s  ·  %d calls completed"%[phase,model.facility(green_id).responses]
 	hud.show_life(state,info,model,following_bus>=0)
 	hud.show_transit(transit.network,transit.service,following_bus,info)
 	if business_id<0 and not manifests.is_empty(): business_id=manifests[0].shop
@@ -363,9 +376,9 @@ func _visit_green(id:=-1) -> void:
 	green_id=id
 	var green:Dictionary=town.greens[id].data
 	orbit.following=false
-	orbit.extent=green.radius*2.9
-	orbit.elevation=.71
-	orbit.pivot=green.pos+Vector3.UP*.85
+	orbit.extent=47. if green.kind==6 else (25. if green.kind==7 else green.radius*2.9)
+	orbit.elevation=.39 if green.kind>=6 else .60
+	orbit.pivot=green.pos+Vector3.UP*([.85,.85,2.8,4.3,2.9,3.,16.,8.][green.kind] as float)
 	orbit.azimuth=_clear_angle(orbit.pivot,green.yaw+PI+.38,Vector3.RIGHT*3.)
 	orbit.update_view()
 

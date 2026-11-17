@@ -64,10 +64,11 @@ func create(sim, landscape) -> void:
 func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 	var time:float=state.tick+fraction
 	while greens.size()<state.facilities:
-		var space:=preload("res://scripts/green_space.gd").new()
+		var site:Dictionary=model.facility(greens.size())
+		var space=preload("res://scripts/green_space.gd").new() if site.kind<2 else preload("res://scripts/civic_site.gd").new()
 		add_child(space)
 		if not street_crown: street_crown=preload("res://scripts/landscape.gd").crown_mesh(preload("res://art/deciduous.png"),4.4)
-		space.setup(model,land,model.facility(greens.size()),street_crown)
+		space.setup(model,land,site,street_crown)
 		greens.append(space)
 		space.advance(time)
 		if space.data.opens>time: landscaping.append(space)

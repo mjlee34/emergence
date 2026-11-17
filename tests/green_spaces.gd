@@ -14,10 +14,10 @@ func run() -> void:
 	root.add_child(world)
 	world.set_process(false)
 	check(world.town.greens.size()==2,"Founding facilities missing")
-	world.hud.parks_button.pressed.emit()
+	world.hud.parks_button.get_popup().id_pressed.emit(0)
 	world._process(0.)
 	check(world.green_id==0 and world.hud.identity.text.contains("park"),"Parks button did not visit the garden")
-	world.hud.parks_button.pressed.emit()
+	world._visit_green()
 	world._process(0.)
 	check(world.green_id==1 and world.hud.identity.text.contains("playground"),"Could not cycle to playground")
 	check(world.hud.green_dots.size()==2 and world.state.visitors[1]>0,"Playground visitors or map pins missing")
@@ -41,5 +41,20 @@ func run() -> void:
 		world._select_speed(1)
 		world._process(45.)
 		check(green.fittings.scale.y==1. and not world.town.landscaping.has(green),"Completed facility still under construction")
+	world.model.step(90000-world.model.summary().tick)
+	world.state=world.model.summary()
+	world._sync()
+	var services:Dictionary={}
+	for id in world.town.greens.size():
+		var site=world.town.greens[id]
+		if site.data.kind in [2,3,4,5]: services[site.data.kind]=id
+	check(services.size()==4,"Missing public service meshes")
+	for kind in services:
+		var id:int=services[kind]
+		world.hud.parks_button.get_popup().id_pressed.emit(id)
+		world._sync()
+		check(world.green_id==id and world.hud.identity.text==world.model.facility(id).name,"Places menu selected a different site")
+		check(world.hud.routine_label.text.contains("within reach"),"Public service coverage missing")
+		if kind!=2: check(is_instance_valid(world.town.greens[id].vehicle),"Missing response vehicle")
 	print("Green space checks completed with ",failures," failures.")
 	quit(1 if failures else 0)
