@@ -1,5 +1,5 @@
 #pragma once
-#include "geo/terrain.hpp"
+#include "sim/road_trip.hpp"
 #include <cstdint>
 #include <vector>
 
@@ -19,17 +19,9 @@ struct Wallet {
   int cash = 0, wages = 0, spent = 0, purchase_day = -1, receipt = -1,
       shop = -1;
 };
-struct DriveLeg {
-  int edge;
-  double from, to, end_time;
-};
 struct Shipment {
   int id, supplier, shop, units, ordered, arrival, completed;
   std::vector<DriveLeg> route;
-};
-struct VanPose {
-  Point position;
-  double height, yaw;
 };
 class Economy {
 public:

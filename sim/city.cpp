@@ -84,23 +84,24 @@ City::City(uint32_t seed, Site site) : site_(std::move(site)), seed_(seed), rand
   population_ = capacity_ * 95 / 100;
   for (int i = 0; i < int(buildings_.size()); ++i)
     life_.open(*this, i, buildings_[i].capacity);
+  life_.start_service(*this);
   life_.settle(*this);
   for (int i = 0; i < int(buildings_.size()); ++i)
     economy_.open(*this, i);
   economy_.update(*this);
-  for (int i = 0; i < 22; ++i)
-    spawn_vehicle();
   record("Settlement established");
 }
-void City::spawn_vehicle() {
-  Vehicle v{};
-  v.speed = .75 + (draw() % 60) * .01;
-  int start = draw() % nodes_.size();
-  while (!connected(start))
-    start = (start + 1) % nodes_.size();
-  dispatch(v, start);
-  v.along = roads_[v.edge].lengths.back() * (draw() % 98) / 100.;
-  vehicles_.push_back(std::move(v));
+std::vector<Vehicle> City::vehicles() const {
+  std::vector<Vehicle> active;
+  for (int id = 0; id < population_; ++id) {
+    auto phase = life_.routine(id, tick_);
+    if (phase.activity != Activity::Driving)
+      continue;
+    const auto &trip = life_.drive_paths()[phase.drive];
+    active.push_back(drive_vehicle(
+        *this, trip, phase.progress * trip.back().end_time, .98, true));
+  }
+  return active;
 }
 int City::find_node(int c, int r) const {
   auto it = node_index_.find({c, r});
@@ -369,17 +370,6 @@ bool City::connected(int node) const {
   return std::any_of(edges.begin(), edges.end(),
                      [&](int e) { return roads_[e].opens <= tick_; });
 }
-void City::dispatch(Vehicle &v, int start) {
-  int target = (start + 1 + draw() % (nodes_.size() - 1)) % nodes_.size();
-  while (target == start || !connected(target))
-    target = (target + 1) % nodes_.size();
-  v.route = road_route(start, target);
-  v.destination = target;
-  v.edge = v.route.back();
-  v.route.pop_back();
-  v.from = start;
-  v.along = 0;
-}
 std::vector<int> City::road_route(int start, int target) const {
   std::vector<int> via(nodes_.size(), -1);
   std::vector<double> cost(nodes_.size(),
@@ -481,25 +471,6 @@ void City::advance(int ticks) {
         vacant_ticks_ = tick_ + 192 * planning_interval;
     }
     economy_.update(*this);
-    if (tick_ % (96 * planning_interval) == 0 &&
-        int(vehicles_.size()) < std::min(115, 22 + population_ / 190))
-      spawn_vehicle();
-    for (auto &v : vehicles_) {
-      const auto &road = roads_[v.edge];
-      v.along += v.speed * speed_factor(road.type);
-      if (v.along >= road.lengths.back()) {
-        double carry = v.along - road.lengths.back();
-        int end = road.a == v.from ? road.b : road.a;
-        if (v.route.empty())
-          dispatch(v, end);
-        else {
-          v.edge = v.route.back();
-          v.route.pop_back();
-          v.from = end;
-        }
-        v.along = carry;
-      }
-    }
   }
 }
 void City::record(std::string text) {
@@ -543,14 +514,6 @@ uint64_t City::digest() const {
     mix(b.previous_floors);
     mix(b.floors);
     mix(b.capacity);
-  }
-  for (const auto &v : vehicles_) {
-    mix(v.edge);
-    mix(v.from);
-    mix(v.destination);
-    mix(std::bit_cast<uint64_t>(v.along));
-    for (auto e : v.route)
-      mix(e);
   }
   return h;
 }

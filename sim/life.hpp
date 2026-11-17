@@ -1,5 +1,5 @@
 #pragma once
-#include "geo/terrain.hpp"
+#include "sim/transit.hpp"
 #include <array>
 #include <cstdint>
 #include <map>
@@ -8,14 +8,12 @@ namespace city {
 class City;
 constexpr int minutes_per_day = 1440, ticks_per_minute = 4,
               opening_minute = 465;
-enum class Activity { Home, Work, Shopping, Walking };
-struct WalkPoint {
-  Point pos;
-  double height;
-};
-struct Footpath {
-  std::vector<WalkPoint> points;
-  std::vector<double> lengths;
+enum class Activity { Home, Work, Shopping, Walking, Waiting, Riding, Driving };
+enum class Mode { Walk, Car, Bus };
+struct CommuteLeg {
+  int drive = -1;
+  double access = 0, driving = 0, duration = 0;
+  BusTrip bus;
 };
 struct Resident {
   int home, work = -1, shop = -1, commute = -1, errand = -1, first_day = 0;
@@ -23,21 +21,27 @@ struct Resident {
   bool seeks_work;
   int leave_home, lunch, finish;
   double commute_minutes = 0;
+  double outing_return = 0;
+  Mode mode = Mode::Walk;
+  bool car_owner = false;
+  std::array<CommuteLeg, 2> trips;
 };
 struct DailyState {
   Activity activity;
   int from, to, route = -1;
   double progress = 0;
-};
-struct PersonPose {
-  Point pos;
-  double height, yaw;
+  bool reverse = false;
+  int stop = -1, bus = -1, drive = -1;
+  bool last_mile = false;
 };
 struct Occupancy {
   int beds = 0, housed = 0, jobs = 0, hired = 0;
 };
 class Life {
 public:
+  void start_service(const City &city) { transit_.establish(city); }
+  const Transit &transit() const { return transit_; }
+  const auto &drive_paths() const { return drives_; }
   void open(const City &city, int lot, int beds);
   void settle(const City &city);
   void hire_waiting(const City &city);
@@ -55,7 +59,14 @@ public:
   uint64_t digest() const;
 
 private:
+  Transit transit_;
+  std::vector<std::vector<DriveLeg>> drives_;
+  std::map<std::pair<int, int>, int> drive_cache_, access_cache_;
   std::vector<Resident> residents_;
+  void plan_travel(const City &city, Resident &r, double walking);
+  BusTrip bus_option(const City &city, int a, int b, double start, double pace);
+  int access_path(const City &city, int lot, int stop);
+  CommuteLeg drive_option(const City &city, int from, int to, double pace);
   std::vector<Occupancy> places_;
   std::vector<int> housing_, employers_, markets_, waiting_;
   std::map<std::pair<int, int>, int> route_index_;

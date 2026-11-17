@@ -13,6 +13,12 @@ var orbit:=Orbit.new()
 var land:=Landscape.new()
 var town:=Town.new()
 var trade:=Trade.new()
+var transit:=preload("res://scripts/transit.gd").new()
+var following_bus:=-1
+var observer_angle:=0.
+var angle_origin:=Vector3.INF
+var last_bus_stop:=-1
+var capture_bus:=-1
 var business_id:=-1
 var following_van:=-1
 var manifests:Array=[]
@@ -50,6 +56,7 @@ func _ready() -> void:
 		if arg.begins_with("--site-road="): fixed_site=Vector2i(0,int(arg.trim_prefix("--site-road=")))
 		if arg.begins_with("--site-lot="): fixed_site=Vector2i(1,int(arg.trim_prefix("--site-lot=")))
 		if arg=="--no-hud": hud.visible=false
+		if arg.begins_with("--bus="): capture_bus=clampi(int(arg.trim_prefix("--bus=")),0,3)
 		if arg=="--freight": capture_freight=true
 		if arg.begins_with("--counter="): capture_counter=int(arg.trim_prefix("--counter="))
 		if arg=="--street": street_capture=true
@@ -74,6 +81,8 @@ func _ready() -> void:
 	add_child(town)
 	town.create(model,land)
 	add_child(trade)
+	add_child(transit)
+	transit.create(model)
 	add_child(people)
 	add_child(orbit)
 	if atlas:
@@ -95,6 +104,7 @@ func _ready() -> void:
 	hud.speed_selected.connect(_select_speed)
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
+	hud.bus_requested.connect(_watch_bus)
 	hud.meet_requested.connect(_meet)
 	hud.construction_requested.connect(_toggle_construction)
 	hud.freight_requested.connect(_follow_delivery)
@@ -109,6 +119,7 @@ func _ready() -> void:
 	if capture_counter>=0 and not model.business(capture_counter).is_empty():
 		business_id=capture_counter
 		_view_business()
+	if capture_bus>=0: _watch_bus(capture_bus)
 	if capture_freight: _follow_delivery()
 	if meet_capture: _meet()
 	if capture_resident>=0 and capture_resident<state.population: _watch(capture_resident)
@@ -165,6 +176,9 @@ func _process(delta:float) -> void:
 		state=model.summary()
 	orbit.frame_city(state.bounds,1.-exp(-delta*1.8))
 	_sync()
+	if following_bus>=0 or watching:
+		orbit.azimuth=lerp_angle(orbit.azimuth,observer_angle,1.-exp(-delta*3.))
+		orbit.update_view()
 	if watching_construction: _follow_works(1.-exp(-delta*3.))
 
 func _sync() -> void:
@@ -185,12 +199,26 @@ func _sync() -> void:
 		info=model.resident(selected,remainder)
 		if watching:
 			orbit.pivot=info.position+Vector3.UP*1.0
+			if info.activity>=3 and angle_origin.distance_squared_to(orbit.pivot)>12.:
+				angle_origin=orbit.pivot
+				observer_angle=_clear_angle(orbit.pivot,observer_angle,Vector3.ZERO)
 			orbit.update_view()
 	town.sync(state,remainder)
+	transit.sync(model,town,remainder)
+	if following_bus>=0:
+		var at:int=transit.service.buses[following_bus].stop
+		var bus:Node3D=transit.buses[following_bus]
+		if at!=last_bus_stop or angle_origin.distance_squared_to(bus.position)>16.:
+			last_bus_stop=at
+			angle_origin=bus.position
+			observer_angle=_clear_angle(bus.position+Vector3.UP*1.45,observer_angle,bus.global_basis.x*2.4)
+		orbit.pivot=transit.buses[following_bus].position+Vector3.UP*1.45
+		orbit.update_view()
 	people.sync(model,orbit,state,remainder,selected)
 	hud.display(state,speed,orbit.azimuth)
 	hud.sync_map(model,state.roads,state.buildings)
-	hud.show_life(state,info,model)
+	hud.show_life(state,info,model,following_bus>=0)
+	hud.show_transit(transit.network,transit.service,following_bus,info)
 	if business_id<0 and not manifests.is_empty(): business_id=manifests[0].shop
 	trade.sync(model,state,manifests,remainder,following_van,business_id)
 	hud.show_trade(model,model.business(business_id),run,manifests.size(),state.tick)
@@ -207,6 +235,7 @@ func _sync() -> void:
 	atmosphere.ambient_light_energy=lerpf(.20,.58,daylight)
 
 func _toggle_construction() -> void:
+	following_bus=-1
 	watching_construction=not watching_construction
 	construction_target=Vector2i(-1,-1)
 	hud.works_button.text="Leave site" if watching_construction else "Construction"
@@ -221,6 +250,7 @@ func _toggle_construction() -> void:
 		hud.construction_note=""
 
 func _leave_site() -> void:
+	following_bus=-1
 	if watching_construction: _toggle_construction()
 
 func _follow_works(weight:float) -> void:
@@ -361,7 +391,60 @@ func _district_view(use:int) -> void:
 	orbit.elevation=.64
 	orbit.update_view()
 
+func _clear_angle(pivot:Vector3,preferred:float,half_length:Vector3) -> float:
+	var distance:float=orbit.extent*.5/tan(deg_to_rad(orbit.fov)*.5)
+	var best:=INF
+	var chosen:=preferred
+	for offset in [0.,.55,-.55,1.35,-1.35,2.25,-2.25,PI]:
+		var angle:float=preferred+offset
+		var dir:=Vector3(sin(angle)*cos(orbit.elevation),sin(orbit.elevation),cos(angle)*cos(orbit.elevation))
+		var score:float=absf(offset)*.012
+		for site in town.sites:
+			if site.position.distance_squared_to(pivot)>pow(distance+14.,2): continue
+			var inv:=site.global_transform.affine_inverse()
+			for along in [-1.,0.,1.]:
+				var from:Vector3=pivot+half_length*along
+				var hit=BuildingWorks.visible_bounds(site).intersects_ray(inv*from,inv.basis*dir)
+				if hit!=null and (site.global_transform*hit).distance_to(from)<distance: score+=1.
+		if score<best:
+			best=score
+			chosen=angle
+		if score==0.: break
+	return chosen
+
+func _watch_bus(id:=-1) -> void:
+	if transit.service.buses.is_empty(): return
+	if id<0:
+		id=(following_bus+1)%transit.service.buses.size()
+		if following_bus<0:
+			var best:=-1
+			for i in transit.service.buses.size():
+				var bus:Dictionary=transit.service.buses[i]
+				var score:int=bus.load+transit.service.waiting[bus.next]*4
+				if score>best: id=i; best=score
+	_leave_site()
+	following_van=-1
+	selected=-1
+	watching=false
+	following_bus=id
+	orbit.following=false
+	orbit.extent=24.
+	orbit.elevation=.67
+	last_bus_stop=transit.service.buses[id].stop
+	var bus:Node3D=transit.buses[id]
+	angle_origin=bus.position
+	observer_angle=_clear_angle(bus.position+Vector3.UP*1.45,bus.rotation.y+.84,bus.global_basis.x*2.4)
+	orbit.azimuth=observer_angle
+	orbit.pivot=transit.buses[id].position+Vector3.UP*1.45
+	orbit.update_view()
+
 func _meet() -> void:
+	if following_bus>=0:
+		var bus:Dictionary=transit.service.buses[following_bus]
+		var rider:int=bus.rider
+		if rider<0: rider=transit.service.first_waiter[bus.stop if bus.dwell else bus.next]
+		if rider>=0: _watch(rider)
+		return
 	if people.ids.is_empty():
 		selected=0 if selected<0 else (selected+1)%state.population
 	else:
@@ -387,14 +470,20 @@ func _watch(id:int) -> void:
 	orbit.extent=28
 	var r:Dictionary=model.resident(id,remainder)
 	orbit.pivot=r.position+Vector3.UP
+	angle_origin=orbit.pivot
+	observer_angle=_clear_angle(orbit.pivot,orbit.azimuth,Vector3.ZERO) if r.activity>=3 else orbit.azimuth
+	orbit.azimuth=observer_angle
 	orbit.update_view()
 
 func _unhandled_input(event:InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index==MOUSE_BUTTON_LEFT:
 		if event.pressed: click_start=event.position
 		elif click_start.distance_to(event.position)<4. and not event.shift_pressed:
+			var vehicle:=transit.pick(orbit,event.position,people,town.sites)
 			var id:=people.pick(orbit,event.position,town.sites)
 			if id>=0: _watch(id)
+			elif vehicle.x==0: _watch(vehicle.y)
+			elif vehicle.x==1: _watch_bus(vehicle.y)
 			else:
 				var at:=_pick_business(event.position)
 				if at>=0:
@@ -437,6 +526,7 @@ func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
 			KEY_M: map_requested.emit()
+			KEY_B: _watch_bus()
 			KEY_G: _toggle_construction()
 			KEY_H: _fit_city()
 			KEY_V: _street_view()

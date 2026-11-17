@@ -84,8 +84,7 @@ void walk_edge(const City &city, Footpath &path, const Road &road, int a, int b,
       break;
   }
 }
-Footpath connect(const City &city, int origin, int target) {
-  const auto a = entrance(city, origin), b = entrance(city, target);
+Footpath connect(const City &city, const Entrance &a, const Entrance &b) {
   const auto &roads = city.roads();
   const auto &first = roads[a.edge];
   const auto &last = roads[b.edge];
@@ -170,7 +169,8 @@ int Life::path(const City &c, int a, int b) {
   auto key = std::make_pair(std::min(a, b), std::max(a, b));
   auto [it, added] = route_index_.emplace(key, int(paths_.size()));
   if (added)
-    paths_.push_back(connect(c, key.first, key.second));
+    paths_.push_back(
+        connect(c, entrance(c, key.first), entrance(c, key.second)));
   return it->second;
 }
 void Life::open(const City &c, int id, int beds) {
@@ -210,6 +210,12 @@ void Life::assign_shop(const City &c, Resident &r) {
   }
   r.shop = chosen;
   r.errand = path(c, origin, chosen);
+  if (r.work < 0 && r.errand >= 0) {
+    double walking = std::clamp(paths_[r.errand].lengths.back() /
+                                    (2.6 + (r.variation % 8) * .1),
+                                2., 120.);
+    plan_travel(c, r, walking);
+  }
 }
 void Life::assign_work(const City &c, Resident &r) {
   if (employers_.empty())
@@ -239,6 +245,110 @@ void Life::assign_work(const City &c, Resident &r) {
                           : std::clamp(paths_[r.commute].lengths.back() /
                                            (2.6 + (r.variation % 8) * .1),
                                        2., 150.);
+  plan_travel(c, r, r.commute_minutes);
+}
+int Life::access_path(const City &c, int lot, int stop) {
+  auto [it, added] =
+      access_cache_.emplace(std::pair{lot, stop}, int(paths_.size()));
+  if (added) {
+    auto &s = transit_.stops()[stop];
+    paths_.push_back(
+        connect(c, entrance(c, lot), {s.edge, 4, s.side, s.platform}));
+  }
+  return it->second;
+}
+BusTrip Life::bus_option(const City &c, int home, int work, double start,
+                         double pace) {
+  BusTrip best;
+  best.finish = std::numeric_limits<double>::infinity();
+  auto &stops = transit_.stops();
+  for (int a = 0; a < int(stops.size()); ++a) {
+    if (distance(c.buildings()[home].pos, stops[a].platform.pos) > 70.)
+      continue;
+    int access = access_path(c, home, a);
+    double reach = start + paths_[access].lengths.back() / pace;
+    for (int b = 0; b < int(stops.size()); ++b) {
+      if (a == b || stops[b].direction != stops[a].direction ||
+          distance(c.buildings()[work].pos, stops[b].platform.pos) > 70.)
+        continue;
+      int egress = access_path(c, work, b);
+      auto trip = transit_.departure(a, b, reach);
+      if (trip.from < 0)
+        continue;
+      trip.access = access;
+      trip.egress = egress;
+      trip.finish = trip.alight + paths_[egress].lengths.back() / pace;
+      if (trip.finish < best.finish)
+        best = trip;
+    }
+  }
+  return best;
+}
+CommuteLeg Life::drive_option(const City &c, int from, int to, double pace) {
+  auto [it, added] =
+      drive_cache_.emplace(std::pair{from, to}, int(drives_.size()));
+  if (added)
+    drives_.push_back(drive_route(c, from, to, .98));
+  auto &route = drives_[it->second];
+  CommuteLeg trip;
+  trip.drive = it->second;
+  trip.driving = std::max(.25, route.back().end_time / ticks_per_minute);
+  auto start = drive_pose(c, route, 0, .98),
+       end = drive_pose(c, route, route.back().end_time, .98);
+  trip.access = std::max(
+      .25, distance(entrance(c, from).door.pos, start.position) / pace);
+  trip.duration =
+      trip.access + trip.driving +
+      std::max(.25, distance(entrance(c, to).door.pos, end.position) / pace);
+  return trip;
+}
+void Life::plan_travel(const City &c, Resident &r, double walking) {
+  const double pace = 2.6 + (r.variation % 8) * .1;
+  int destination = r.work >= 0 ? r.work : r.shop;
+  double start = r.work >= 0 ? r.leave_home : 405 + r.variation % 545;
+  r.mode = Mode::Walk;
+  r.trips = {};
+  double best = walking * 2.;
+  for (auto &leg : r.trips)
+    leg.duration = walking;
+  if (r.car_owner) {
+    auto out = drive_option(c, r.home, destination, pace),
+         back = drive_option(c, destination, r.home, pace);
+    double cost = out.duration + back.duration + 12. + (r.variation >> 20) % 22;
+    if (cost < best) {
+      best = cost;
+      r.mode = Mode::Car;
+      r.trips = {out, back};
+    }
+  }
+  auto out = bus_option(c, r.home, destination, start, pace);
+  double return_start = r.work >= 0 ? r.finish : out.finish + 45.;
+  BusTrip back;
+  if (out.from >= 0)
+    back = bus_option(c, destination, r.home, return_start, pace);
+  if (out.from >= 0 && back.from >= 0 &&
+      out.finish - start + back.finish - return_start + 2. < best) {
+    r.mode = Mode::Bus;
+    transit_.reserve(out);
+    transit_.reserve(back);
+    r.trips[0] = {};
+    r.trips[1] = {};
+    auto spread = [&](BusTrip &t) {
+      const auto &s = transit_.stops()[t.from];
+      t.board = std::max(t.reach, t.run * Transit::headway + s.arrival + .45 +
+                                      (r.variation % 101) * .010);
+    };
+    spread(out);
+    spread(back);
+    r.trips[0].bus = out;
+    r.trips[0].duration = out.finish - start;
+    r.trips[1].bus = back;
+    r.trips[1].duration = back.finish - return_start;
+  }
+  if (r.work >= 0)
+    r.commute_minutes = r.trips[0].duration;
+  else
+    r.outing_return = start + r.trips[0].duration + 45.;
 }
 void Life::settle(const City &c) {
   while (int(residents_.size()) < c.population()) {
@@ -253,23 +363,23 @@ void Life::settle(const City &c) {
     Resident r{};
     r.home = home;
     r.variation = v;
+    r.car_owner = (v >> 12) % 100 < 57;
     r.seeks_work = v % 100 < 67;
     r.leave_home = 375 + int(v % 145);
     r.lunch = 690 + int((v >> 8) % 69);
     r.finish = r.leave_home + 510 + int((v >> 16) % 41);
-    // Arrivals join their next routine from home. The founding population is
-    // already living here.
-    if (c.tick() > 0) {
-      int minute = c.tick() / ticks_per_minute + opening_minute;
-      r.first_day =
-          minute / minutes_per_day + (minute % minutes_per_day >= r.leave_home);
-    }
     if (r.seeks_work) {
       assign_work(c, r);
       if (r.work < 0)
         waiting_.push_back(int(residents_.size()));
     }
     assign_shop(c, r);
+    if (c.tick() > 0) {
+      int minute = c.tick() / ticks_per_minute + opening_minute;
+      int departure = r.work >= 0 ? r.leave_home : 405 + r.variation % 545;
+      r.first_day =
+          minute / minutes_per_day + (minute % minutes_per_day >= departure);
+    }
     residents_.push_back(r);
   }
 }
@@ -278,6 +388,9 @@ void Life::hire_waiting(const City &c) {
   while (!waiting_.empty() && !employers_.empty()) {
     auto &r = residents_[waiting_.back()];
     waiting_.pop_back();
+    if (r.mode == Mode::Bus)
+      for (auto &leg : r.trips)
+        transit_.release(leg.bus);
     assign_work(c, r);
     assign_shop(c, r);
   }
@@ -298,14 +411,57 @@ DailyState Life::routine(int id, double tick) const {
                                   2., limit);
   };
   auto walk = [](int from, int to, int route, double elapsed, double length) {
-    return DailyState{Activity::Walking, from, to, route, elapsed / length};
+    return DailyState{Activity::Walking, from,     to, route,
+                      elapsed / length,  from > to};
+  };
+  auto commute_state = [&](int direction, double start) {
+    const auto &trip = r.trips[direction];
+    int destination = r.work >= 0 ? r.work : r.shop;
+    int from = direction ? destination : r.home,
+        to = direction ? r.home : destination;
+    double e = t - start;
+    if (r.mode == Mode::Walk)
+      return walk(from, to, r.work >= 0 ? r.commute : r.errand, e,
+                  trip.duration);
+    DailyState s{Activity::Walking, from, to};
+    if (r.mode == Mode::Car) {
+      s.drive = trip.drive;
+      if (e < trip.access)
+        s.progress = e / trip.access;
+      else if (e < trip.access + trip.driving) {
+        s.activity = Activity::Driving;
+        s.progress = (e - trip.access) / trip.driving;
+      } else {
+        s.last_mile = true;
+        s.progress = (e - trip.access - trip.driving) /
+                     (trip.duration - trip.access - trip.driving);
+      }
+      return s;
+    }
+    const auto &bus = trip.bus;
+    s.bus = transit_.vehicle(bus);
+    s.stop = bus.from;
+    if (t < bus.reach) {
+      s.route = bus.access;
+      s.progress = e / (bus.reach - start);
+    } else if (t < bus.board)
+      s.activity = Activity::Waiting;
+    else if (t < bus.alight)
+      s.activity = Activity::Riding;
+    else {
+      s.stop = bus.to;
+      s.reverse = true;
+      s.route = bus.egress;
+      s.progress = (t - bus.alight) / (bus.finish - bus.alight);
+    }
+    return s;
   };
   if (r.work >= 0) {
     double commute = r.commute_minutes, errand = duration(r.errand, 36);
     if (t < r.leave_home)
       return stay(Activity::Home, r.home);
     if (t < r.leave_home + commute)
-      return walk(r.home, r.work, r.commute, t - r.leave_home, commute);
+      return commute_state(0, r.leave_home);
     if (r.shop >= 0 && t >= r.lunch && t < r.lunch + 2 * errand + 25) {
       double e = t - r.lunch;
       if (e < errand)
@@ -316,22 +472,58 @@ DailyState Life::routine(int id, double tick) const {
     }
     if (t < r.finish)
       return stay(Activity::Work, r.work);
-    if (t < r.finish + commute)
-      return walk(r.work, r.home, r.commute, t - r.finish, commute);
+    if (t < r.finish + r.trips[1].duration)
+      return commute_state(1, r.finish);
   } else if (r.shop >= 0) {
-    double start = 405 + r.variation % 545, d = duration(r.errand, 120),
-           e = t - start;
-    if (e >= 0 && e < d)
-      return walk(r.home, r.shop, r.errand, e, d);
-    if (e >= d && e < d + 45)
+    double start = 405 + r.variation % 545;
+    if (t >= start && t < start + r.trips[0].duration)
+      return commute_state(0, start);
+    if (t >= start + r.trips[0].duration && t < r.outing_return)
       return stay(Activity::Shopping, r.shop);
-    if (e >= d + 45 && e < 2 * d + 45)
-      return walk(r.shop, r.home, r.errand, e - d - 45, d);
+    if (t >= r.outing_return && t < r.outing_return + r.trips[1].duration)
+      return commute_state(1, r.outing_return);
   }
   return stay(Activity::Home, r.home);
 }
 PersonPose Life::pose(const City &c, int id, const DailyState &s,
                       double tick) const {
+  if (s.activity == Activity::Riding)
+    return transit_.bus(s.bus, tick / ticks_per_minute + opening_minute).pose;
+  if (s.activity == Activity::Waiting) {
+    const auto &stop = transit_.stops()[s.stop];
+    double along = (int(residents_[id].variation % 9) - 4) * .47;
+    double back = ((residents_[id].variation >> 6) % 3) * .27;
+    Point p = {stop.platform.pos.x + along * std::cos(stop.yaw) +
+                   back * std::sin(stop.yaw),
+               stop.platform.pos.z - along * std::sin(stop.yaw) +
+                   back * std::cos(stop.yaw)};
+    const auto &r = residents_[id];
+    const auto &trip = r.trips[s.from == r.home ? 0 : 1].bus;
+    double minute =
+        std::fmod(tick / ticks_per_minute + opening_minute, minutes_per_day);
+    double step = std::clamp(1. - (trip.board - minute) / .55, 0., 1.);
+    auto bus = transit_.bus(s.bus, minute);
+    if (bus.dwelling && bus.stop == s.stop) {
+      double yaw = bus.pose.yaw - 1.57079632679;
+      Point door{bus.pose.pos.x + std::cos(yaw) * 2.36 + std::sin(yaw) * 1.12,
+                 bus.pose.pos.z - std::sin(yaw) * 2.36 + std::cos(yaw) * 1.12};
+      p = {std::lerp(p.x, door.x, step), std::lerp(p.z, door.z, step)};
+    }
+    return {p, c.height(p) + .38, stop.yaw + 3.14159};
+  }
+  if (s.drive >= 0) {
+    const auto &route = drives_[s.drive];
+    double t =
+        s.activity == Activity::Driving ? s.progress : (s.last_mile ? 1. : 0.);
+    auto car = drive_pose(c, route, t * route.back().end_time, .98);
+    if (s.activity == Activity::Driving)
+      return {car.position, car.height, 1.57079632679 + car.yaw};
+    auto door = entrance(c, s.last_mile ? s.to : s.from).door;
+    Point a = s.last_mile ? car.position : door.pos,
+          b = s.last_mile ? door.pos : car.position;
+    Point p{std::lerp(a.x, b.x, s.progress), std::lerp(a.z, b.z, s.progress)};
+    return {p, c.height(p) + .3, std::atan2(b.x - a.x, b.z - a.z)};
+  }
   if (s.activity != Activity::Walking) {
     auto a = entrance(c, s.to);
     const auto &b = c.buildings()[s.to];
@@ -345,28 +537,15 @@ PersonPose Life::pose(const City &c, int id, const DailyState &s,
     }
     return {a.door.pos, a.door.height, b.yaw};
   }
-  const auto &path = paths_[s.route];
-  bool forward = s.from < s.to;
-  double d = (forward ? s.progress : 1 - s.progress) * path.lengths.back();
-  auto it = std::lower_bound(path.lengths.begin() + 1, path.lengths.end(), d);
-  size_t k =
-      std::min(size_t(it - path.lengths.begin()), path.points.size() - 1);
-  auto a = path.points[k - 1], b = path.points[k];
-  double len = path.lengths[k] - path.lengths[k - 1];
-  double f = std::clamp((d - path.lengths[k - 1]) / len, 0., 1.);
-  double dx = b.pos.x - a.pos.x, dz = b.pos.z - a.pos.z;
-  // Slight lateral spacing keeps individuals legible on a shared sidewalk.
-  double spacing = std::sin(3.14159265 * s.progress) *
-                   ((int(residents_[id].variation % 11) - 5) * .06) / len;
-  return {{std::lerp(a.pos.x, b.pos.x, f) - dz * spacing,
-           std::lerp(a.pos.z, b.pos.z, f) + dx * spacing},
-          std::lerp(a.height, b.height, f),
-          std::atan2(forward ? dx : -dx, forward ? dz : -dz)};
+  return follow_path(paths_[s.route], s.progress, !s.reverse,
+                     std::sin(3.14159265 * s.progress) *
+                         ((int(residents_[id].variation % 11) - 5) * .06));
 }
 uint64_t Life::digest() const {
   uint64_t h = 14695981039346656037ULL;
   for (const auto &r : residents_) {
-    for (int v : {r.home, r.work, r.shop, r.first_day, r.commute, r.errand}) {
+    for (int v : {r.home, r.work, r.shop, r.first_day, r.commute, r.errand,
+                  int(r.mode), r.trips[0].bus.run, r.trips[1].bus.run}) {
       h ^= uint32_t(v);
       h *= 1099511628211ULL;
     }

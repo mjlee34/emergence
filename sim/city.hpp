@@ -63,7 +63,7 @@ public:
   const auto &nodes() const { return nodes_; }
   const auto &roads() const { return roads_; }
   const auto &buildings() const { return buildings_; }
-  const auto &vehicles() const { return vehicles_; }
+  std::vector<Vehicle> vehicles() const;
   const auto &renewals() const { return renewals_; }
   const auto &bounds() const { return bounds_; }
   const auto &events() const { return events_; }
@@ -80,7 +80,6 @@ private:
   std::vector<Junction> nodes_;
   std::vector<Road> roads_;
   std::vector<Building> buildings_;
-  std::vector<Vehicle> vehicles_;
   std::vector<Event> events_;
   std::map<std::pair<int, int>, int> node_index_;
   std::vector<int> renewals_;
@@ -93,7 +92,6 @@ private:
   Economy economy_;
   std::array<double, 4> bounds_{-30, 6, -30, 6};
   bool connected(int node) const;
-  void spawn_vehicle();
   bool redevelop();
   int target_floors(const Building &b) const;
   uint32_t draw();
@@ -101,7 +99,6 @@ private:
   bool grow();
   int add_road(int a, int c, int r);
   bool develop(int edge, bool initial);
-  void dispatch(Vehicle &car, int start);
   void record(std::string message);
 };
 } // namespace city

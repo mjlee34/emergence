@@ -10,7 +10,7 @@ The original Alder Reach fixture opens at 07:45. On the market street, commuters
 
 [Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
 
-[Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
+[Watch the morning bus and a resident’s drive to work](captures/bus-commute.mp4) · [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
 
 ## Play on Apple Silicon
 
@@ -31,7 +31,9 @@ The simulation starts at **1×** with one local minute passing per real second. 
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
 | Follow the nearest active construction project | G or Construction |
-| Follow a pedestrian | Click the person or choose Meet a resident |
+| Follow a resident | Click a pedestrian or private car, or choose Meet a resident |
+| Follow Line 1 and see its next stop, queue and load | B, Follow bus, or click a bus |
+| Follow a passenger through alighting and arrival | Meet a rider while following a bus |
 | Visit a residential street, market or industrial yard | Homes, Markets or Works |
 | Return to the market street | V or Street view |
 | Orbit and take control of the camera | Drag |
@@ -76,7 +78,11 @@ To watch the first street and its adjacent house from groundbreaking, launch wit
 
 Every resident has a persistent address. Finished housing admits new residents, and shops and industrial workplaces hire up to their job capacity. Residents seeking work are matched against openings with a preference for nearby workplaces. Occupied housing and employment demand also influence new construction.
 
-With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies. Workers walk to assigned workplaces, visit nearby shops for lunch, return to work and walk home. Other residents run daytime errands from home. Building occupancy and the activity counters follow those individual schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
+With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies. Among the workers, 727 walk, 78 drive and 76 take the bus. Each resident compares the door-to-door round trip for the destinations on their schedule. A private car requires access to a car and includes walking at both curbs and an individual parking penalty. A bus journey includes walking on the sidewalk network, waiting for a scheduled departure, a seat on each segment, and the walk to the destination. Workers visit nearby shops on foot during their lunch break. Residents without jobs make their own mode choices for trips to the shops.
+
+The founding road graph determines the route of **Line 1**. Four buses circulate in two directions, serving each direction every 18 city minutes. Each vehicle holds 32 passengers and opens its doors at each two-minute stop. A full segment pushes subsequent riders to a later departure or another option. Click a private car to inspect its driver, or press **B** and select **Meet a rider**. The city map highlights the line, stops and tracked bus. To start alongside the morning queue in the fixture, launch with `-- --fixture --at=79 --bus=0`.
+
+Building occupancy, workers on shift and shoppers at the till follow these schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
 
 ### Local trade
 
@@ -108,7 +114,7 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 5 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 6 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -117,7 +123,7 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 - **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Two reserved crossings connect dry banks. District sites and major rights of way are fixture inputs. A free-angle planner for arbitrary geography will also need edge splitting and bridge-site selection.
 - **Terrain integration.** Imported sites have a shared metre-based height sampler. The present road planner keeps its warped lattice and fixed district targets. Real-site bridge placement, local street grading and detailed river masks are future work.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
-- **Growth horizon.** This model fills a finite site and reaches capacity. Car traffic runs independently of the individual pedestrian itineraries. Delivery vans carry actual wholesale orders. Household aging, road congestion and business closures remain future work.
+- **Growth horizon.** This model fills a finite site and reaches capacity. Residents drive their own trips and delivery vans carry wholesale orders. Line 1 keeps its founding circuit as the city expands. Additional lines, transfers, congestion, household aging and business closures remain future work.
 
 ## Verification and profiling
 
@@ -136,11 +142,12 @@ After building the extension and importing the project, run the integration chec
 
 ```sh
 "$GODOT" --headless --path game --script ../tests/playable.gd
+"$GODOT" --headless --path game --script ../tests/transport.gd
 "$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
 ```
 
 The map checks cover coordinate selection and search, the three bundled real sites, water rejection, the flight into the simulation and resuming a city. On macOS, running `"$GODOT" --path game --script ../tests/google_picker.gd` also exercises the embedded WebKit page using a local map test double. Live Google imagery requires a configured key.
 
-The simulation checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, and a resident’s commute, lunch trip and return home.
+The simulation checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, mode choice, segment capacity, boarding and arrival times, lunch trips and the return home. The transport scene test follows a waiting commuter into a moving bus and through the workplace door.
 
 The market checks reconcile sales with wallets and payroll with business expenses, conserve cash and stock across transfers, and verify that goods enter shop inventory after unloading. To inspect the opening café’s delivery use `--counter=1 --freight` after Godot’s `--` argument separator.

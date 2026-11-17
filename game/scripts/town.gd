@@ -20,7 +20,6 @@ var car_meshes: Array[Mesh]=[]
 var construction:Dictionary={}
 var roadworks:Dictionary={}
 var court_works:Dictionary={}
-var cars: Array[Node3D] = []
 var junction_caps:Dictionary={}
 var street_lights:=Node3D.new()
 var last_light_tick:=-1
@@ -105,16 +104,6 @@ func sync(state: Dictionary, fraction: float) -> void:
 		last_light_tick=state.tick
 		for i in buildings:
 			sites[i].set_instance_shader_parameter("occupancy",float(state.occupants[i]))
-	var positions: PackedVector4Array = model.traffic(fraction)
-	while cars.size()<positions.size():
-		var car:=MeshInstance3D.new()
-		car.mesh=car_meshes[cars.size()%car_meshes.size()]
-		add_child(car)
-		cars.append(car)
-	for i in cars.size():
-		var p:=positions[i]
-		cars[i].position=Vector3(p.x,p.y+.31,p.z)
-		cars[i].rotation.y=p.w
 
 func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	var lot:Dictionary=model.lot(id)

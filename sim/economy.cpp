@@ -8,87 +8,18 @@ namespace city {
 namespace {
 constexpr int loading = 20, unloading = 28, cadence = 40;
 constexpr double van_speed = .84;
-int entrance(const City &c, int lot) {
-  auto &b = c.buildings()[lot];
-  auto &r = c.roads()[b.frontage];
-  return distance(r.path[2], b.pos) < distance(r.path[6], b.pos) ? 2 : 6;
-}
 Shipment manifest(const City &c, int id, int supplier, int shop, int units) {
-  Shipment s{id, supplier, shop, units, c.tick(), 0, 0, {}};
-  int first = c.buildings()[supplier].frontage,
-      last = c.buildings()[shop].frontage;
-  const auto &a = c.roads()[first], &b = c.roads()[last];
-  double start = a.lengths[entrance(c, supplier)],
-         end = b.lengths[entrance(c, shop)];
-  double time = 0;
-  auto leg = [&](int edge, double from, double to) {
-    if (std::abs(to - from) < .001)
-      return;
-    time +=
-        std::abs(to - from) / (van_speed * speed_factor(c.roads()[edge].type));
-    s.route.push_back({edge, from, to, time});
-  };
-  auto curb_forward = [&](const Road &r, int lot) {
-    int k = entrance(c, lot);
-    auto p = r.path[k], q = r.path[k + 1], door = c.buildings()[lot].pos;
-    return (q.x - p.x) * (door.z - p.z) - (q.z - p.z) * (door.x - p.x) > 0;
-  };
-  bool depart_forward = curb_forward(a, supplier),
-       arrive_forward = curb_forward(b, shop);
-  if (first == last && depart_forward == arrive_forward &&
-      (depart_forward ? start <= end : start >= end))
-    leg(first, start, end);
-  else {
-    // Approach each business on its own curb, crossing medians only at
-    // junctions.
-    int start_node = depart_forward ? a.b : a.a;
-    int end_node = arrive_forward ? b.a : b.b;
-    leg(first, start, start_node == a.a ? 0 : a.lengths.back());
-    auto route = c.road_route(start_node, end_node);
-    int node = start_node;
-    for (auto it = route.rbegin(); it != route.rend(); ++it) {
-      auto &r = c.roads()[*it];
-      bool forward = node == r.a;
-      leg(*it, forward ? 0 : r.lengths.back(), forward ? r.lengths.back() : 0);
-      node = forward ? r.b : r.a;
-    }
-    leg(last, end_node == b.a ? 0 : b.lengths.back(), end);
-  }
-  // Opposite businesses can occupy the same point along a street.
-  if (s.route.empty())
-    s.route.push_back({first, start, start, 0});
-  s.arrival = s.ordered + loading + int(std::ceil(time));
+  Shipment s{
+      id,       supplier, shop, units,
+      c.tick(), 0,        0,    drive_route(c, supplier, shop, van_speed)};
+  s.arrival = s.ordered + loading + int(std::ceil(s.route.back().end_time));
   s.completed = s.arrival + unloading;
   return s;
 }
 } // namespace
 VanPose Economy::van(const City &c, const Shipment &s, double tick) const {
-  double elapsed = std::max(0., tick - s.ordered - loading);
-  auto it = std::lower_bound(
-      s.route.begin(), s.route.end(), elapsed,
-      [](const DriveLeg &leg, double t) { return leg.end_time < t; });
-  if (it == s.route.end())
-    --it;
-  const auto &r = c.roads()[it->edge];
-  bool forward = it->to >= it->from;
-  double before = it == s.route.begin() ? 0 : (it - 1)->end_time;
-  double progress =
-      it->end_time > before
-          ? std::clamp((elapsed - before) / (it->end_time - before), 0., 1.)
-          : 0.;
-  double at = std::lerp(it->from, it->to, progress);
-  Vehicle vehicle{it->edge,  forward ? r.a : r.b,
-                  0,         forward ? at : r.lengths.back() - at,
-                  van_speed, {}};
-  double yaw;
-  auto pos = c.vehicle_position(vehicle, yaw);
-  double berth = std::clamp(
-      1. - std::min(elapsed, s.route.back().end_time - elapsed) / 5., 0., 1.);
-  double lane = r.type == RoadClass::Arterial ? 5.35 : road_width(r.type) * .22;
-  double shift = berth * (road_width(r.type) * .5 - .97 - lane);
-  pos.x += std::sin(yaw) * shift;
-  pos.z += std::cos(yaw) * shift;
-  return {pos, c.street_height(r, pos), yaw};
+  return drive_pose(c, s.route, std::max(0., tick - s.ordered - loading),
+                    van_speed);
 }
 void Economy::open(const City &c, int id) {
   if (id >= int(places_.size()))

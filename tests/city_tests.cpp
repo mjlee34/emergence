@@ -9,6 +9,89 @@
     if (!(expr))                                                               \
       throw std::runtime_error(#expr);                                         \
   } while (false)
+void check_commuting() {
+  using namespace city;
+  City c(147);
+  auto &life = c.life();
+  auto &service = life.transit();
+  CHECK(service.stops().size() >= 4);
+  int modes[3] = {}, waits = 0;
+  auto state_at = [&](int id, double minute) {
+    return life.routine(id, (minute - opening_minute) * ticks_per_minute);
+  };
+  for (int id = 0; id < c.population(); ++id) {
+    auto &r = life.people()[id];
+    if (r.work < 0) {
+      if (r.shop >= 0) {
+        const double depart = 405 + r.variation % 545;
+        CHECK(state_at(id, depart + r.trips[0].duration + 1).activity ==
+              Activity::Shopping);
+        CHECK(
+            state_at(id, r.outing_return + r.trips[1].duration + 1).activity ==
+            Activity::Home);
+      }
+      continue;
+    }
+    ++modes[int(r.mode)];
+    for (int d = 0; d < 2; ++d) {
+      double depart = d ? r.finish : r.leave_home;
+      auto &leg = r.trips[d];
+      CHECK(state_at(id, depart + leg.duration + .01).activity ==
+            (d ? Activity::Home : Activity::Work));
+      if (r.mode == Mode::Bus) {
+        auto &t = leg.bus;
+        int bus = service.vehicle(t);
+        auto board = service.bus(bus, t.board),
+             alight = service.bus(bus, t.alight + .001);
+        CHECK(board.dwelling && board.stop == t.from && alight.dwelling &&
+              alight.stop == t.to);
+        if (t.board > t.reach + .001) {
+          CHECK(state_at(id, (t.board + t.reach) * .5).activity ==
+                Activity::Waiting);
+          ++waits;
+        }
+        double minute = (t.board + t.alight) * .5,
+               tick = (minute - opening_minute) * ticks_per_minute;
+        auto trip = life.routine(id, tick);
+        CHECK(trip.activity == Activity::Riding && trip.bus == bus);
+        CHECK(distance(life.pose(c, id, trip, tick).pos,
+                       service.bus(bus, minute).pose.pos) < .001);
+        CHECK(state_at(id, (t.finish + t.alight) * .5).activity ==
+              Activity::Walking);
+      } else if (r.mode == Mode::Car) {
+        CHECK(r.car_owner && leg.drive >= 0);
+        auto trip = state_at(id, depart + leg.access + leg.driving * .5);
+        CHECK(trip.activity == Activity::Driving && trip.drive == leg.drive);
+        auto &route = life.drive_paths()[leg.drive];
+        CHECK(distance(life.pose(c, id, trip).pos,
+                       drive_pose(c, route, route.back().end_time * .5, .98)
+                           .position) < .001);
+        for (auto &edge : route)
+          CHECK(c.roads()[edge.edge].opens <= c.tick());
+      }
+    }
+  }
+  CHECK(modes[0] > 0 && modes[1] > 0 && modes[2] > 0 && waits > 0);
+  for (int t = 0; t < minutes_per_day * 4; t += 2) {
+    std::array<int, Transit::fleet> aboard{};
+    for (int id = 0; id < c.population(); ++id) {
+      auto s = life.routine(id, t);
+      if (s.activity == Activity::Riding)
+        ++aboard.at(s.bus);
+    }
+    for (int count : aboard)
+      CHECK(count <= Transit::capacity);
+  }
+  // Saturate a section. Later riders take the following service or another
+  // mode.
+  Transit busy = service;
+  auto first = busy.departure(0, 1, 60.);
+  CHECK(first.from == 0);
+  for (int i = 0; i < Transit::capacity; ++i)
+    busy.reserve(first);
+  auto later = busy.departure(0, 1, 60.);
+  CHECK(later.run == first.run + 1);
+}
 void check_geographic_terrain() {
   using namespace city;
   Site site;
@@ -127,6 +210,7 @@ void check_construction() {
 
 int main() {
   using namespace city;
+  check_commuting();
   check_geographic_terrain();
   check_market();
   check_construction();
@@ -224,7 +308,7 @@ int main() {
   int observed = -1;
   for (int id = 0; id < opening.population(); ++id) {
     auto &p = opening.life().people()[id];
-    if (p.work >= 0 && p.errand >= 0) {
+    if (p.work >= 0 && p.errand >= 0 && p.mode == Mode::Walk) {
       observed = id;
       break;
     }

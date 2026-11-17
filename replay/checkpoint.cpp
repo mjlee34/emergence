@@ -6,7 +6,7 @@ namespace city {
 std::string checkpoint(const City &c) {
   if (c.site().geographic()) {
     std::ostringstream out;
-    out << "EMERGENCE-GEO-1 " << c.seed() << ' ' << c.tick() << ' ' << c.digest()
+    out << "EMERGENCE-GEO-2 " << c.seed() << ' ' << c.tick() << ' ' << c.digest()
         << ' ' << std::setprecision(std::numeric_limits<double>::max_digits10)
         << c.site().latitude << ' ' << c.site().longitude;
     for (auto y : c.site().elevations) out << ' ' << y;
@@ -14,7 +14,7 @@ std::string checkpoint(const City &c) {
     for (auto wet : c.site().lake) out << ' ' << int(wet);
     return out.str();
   }
-  return "EMERGENCE-5 " + std::to_string(c.seed()) + " " +
+  return "EMERGENCE-6 " + std::to_string(c.seed()) + " " +
          std::to_string(c.tick()) + " " + std::to_string(c.digest());
 }
 std::optional<City> restore(const std::string &record) {
@@ -26,7 +26,7 @@ std::optional<City> restore(const std::string &record) {
   if (!(in >> version >> seed >> tick >> digest) || tick < 0)
     return {};
   Site site;
-  if (version == "EMERGENCE-GEO-1") {
+  if (version == "EMERGENCE-GEO-2") {
     if (!(in >> site.latitude >> site.longitude)) return {};
     site.elevations.resize(Site::side * Site::side);
     for (auto &y : site.elevations)
@@ -40,7 +40,7 @@ std::optional<City> restore(const std::string &record) {
       wet = value;
     }
     if (!site.suitable()) return {};
-  } else if (version != "EMERGENCE-5") return {};
+  } else if (version != "EMERGENCE-6") return {};
   if (in >> trailing)
     return {};
   City c(seed, std::move(site));

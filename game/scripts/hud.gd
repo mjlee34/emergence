@@ -9,12 +9,17 @@ signal counter_requested
 signal speed_selected(value: int)
 signal home_requested
 signal street_requested
+signal bus_requested
+var bus_button:=Button.new()
+var bus_line:=PackedVector2Array()
+var bus_dots:=PackedVector2Array()
+var bus_point:=Vector2.ZERO
 signal meet_requested
 signal district_requested(use:int)
 var district_title:=""
 var construction_note:=""
 var journey:=PackedVector2Array()
-var last_leg:=Vector2i(-1,-1)
+var last_leg:=Vector3i(-1,-1,-1)
 const IVORY=Color("#f6efdb")
 const MUTED=Color("#bccac1")
 const GOLD=Color("#f3c774")
@@ -130,7 +135,14 @@ func _ready() -> void:
 		districts.add_child(b)
 	meet_button.text="Meet a resident"
 	_style_button(meet_button,false)
-	info.add_child(meet_button)
+	var observers:=HBoxContainer.new()
+	info.add_child(observers)
+	observers.add_child(meet_button)
+	bus_button.text="Follow bus"
+	bus_button.tooltip_text="Follow a Line 1 bus (B)"
+	_style_button(bus_button,false)
+	observers.add_child(bus_button)
+	bus_button.pressed.connect(func(): bus_requested.emit())
 	meet_button.pressed.connect(func(): meet_requested.emit())
 	ledger.add_theme_stylebox_override("panel",_box(Color("#193b36f5"),8,Color("#64796a"),1))
 	add_child(ledger)
@@ -241,37 +253,71 @@ func _layout() -> void:
 	street_button.position=Vector2(map_button.position.x-street_button.get_combined_minimum_size().x-7,66)
 	works_button.position=Vector2(street_button.position.x-works_button.get_combined_minimum_size().x-7,66)
 	world_button.position=Vector2(works_button.position.x-world_button.get_combined_minimum_size().x-7,66)
-	life_panel.position=Vector2(34,size.y-345)
+	life_panel.position=Vector2(34,size.y-32-life_panel.get_combined_minimum_size().y)
 	ledger.position=Vector2(size.x-35-ledger.get_combined_minimum_size().x,332 if map_open else 112)
 	queue_redraw()
 
-func show_life(data:Dictionary,resident:Dictionary,model) -> void:
-	occupancy.text="%s working    %s shopping    %s walking" % [grouped(data.at_work),grouped(data.shopping),grouped(data.walking)]
+func show_life(data:Dictionary,resident:Dictionary,model,bus_view:=false) -> void:
+	occupancy.text="%s walking  ·  %s driving  ·  %s waiting  ·  %s aboard\n%s working  ·  %s shopping" % [grouped(data.walking),grouped(data.driving),grouped(data.waiting),grouped(data.riding),grouped(data.at_work),grouped(data.shopping)]
+	if bus_view:
+		journey.clear()
+		last_leg=Vector3i(-1,-1,-1)
+		return
 	if resident.is_empty():
 		identity.text="Street life" if district_title=="" else district_title
 		routine_label.text="Click a person to follow their day.\n%s employed  ·  %s jobs open" % [grouped(data.employed),grouped(data.jobs-data.employed)]
 		if construction_note!="": routine_label.text=construction_note
 		journey.clear()
-		last_leg=Vector2i(-1,-1)
+		last_leg=Vector3i(-1,-1,-1)
 	else:
 		var v:int=resident.variation
 		var given:=["Mina","Theo","Iris","Leon","Ari","Ella","Milo","Ren","Nora","Emil","Sam","Lina","Alex","Noa","Rae","Kai"]
 		var family:=["Park","Reed","Chen","Hill","Baek","Ford","Kim","Bell","Tan","Cole","Shaw","Ito","Yu","Moon","West","Gray"]
 		identity.text="%s %s  ·  #%d"%[given[v%16],family[(v>>8)%16],resident.id+1]
-		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to"][resident.activity]
+		var activity:String=["At home  ·","On shift  ·","Shopping  ·","Walking to","Waiting for Line 1 to","On Line 1 to","Driving to"][resident.activity]
 		var workplace:="Seeking work" if resident.seeking else "Outside workforce"
 		if resident.work>=0:
 			workplace="%s  (%s–%s)"%[_address(model,resident.work),_time(resident.shift),_time(resident.finish)]
 		routine_label.text="%s %s\nHome   %s\nWork    %s"%[activity,_address(model,resident.target),_address(model,resident.home),workplace]
+		if resident.work>=0 or resident.shop>=0:
+			routine_label.text+=("\nCommute   " if resident.work>=0 else "\nShopping trips   ")+["On foot","Private car","Line 1 bus"][resident.mode]
+		if resident.bus>=0:
+			var phase:="Walk from" if resident.last_mile else "Walk to"
+			if resident.activity==4: phase="Waiting at"
+			if resident.activity==5: phase="Aboard · exit at"
+			routine_label.text+="  ·  %s stop %02d"%[phase,(resident.alight_at if resident.activity==5 else resident.stop)+1]
 		routine_label.text+="\nWallet   $%s   ·   $%s earned"%[grouped(resident.wallet),grouped(resident.wages)]
 		if resident.receipt>=0:
 			routine_label.text+="\nLast purchase   $12 at %s"%_address(model,resident.store)
-		var leg:=Vector2i(resident.id,resident.target)
+		var leg:=Vector3i(resident.id,resident.target,resident.activity)
 		if last_leg!=leg:
 			last_leg=leg
 			journey=model.walking_plan(resident.id,0.)
 			queue_redraw()
 	life_panel.reset_size()
+	life_panel.position.y=size.y-32-life_panel.size.y
+
+func show_transit(net:Dictionary,service:Dictionary,id:int,resident:Dictionary) -> void:
+	meet_button.text="Meet a resident"
+	meet_button.disabled=false
+	bus_button.text="Next bus" if id>=0 else "Follow bus"
+	bus_line=PackedVector2Array()
+	bus_dots=PackedVector2Array()
+	var selected_bus:int=id if id>=0 else resident.get("bus",-1)
+	if selected_bus<0: return
+	var row:Dictionary=service.buses[selected_bus]
+	bus_line=net.line
+	for stop in net.stops: bus_dots.append(Vector2(stop.position.x,stop.position.z))
+	bus_point=Vector2(row.pose.x,row.pose.z)
+	if id>=0:
+		var stop:int=row.stop if row.dwell else row.next
+		identity.text="Line 1   ·   Town loop"
+		routine_label.text="Bus %02d   ·   %s %02d · %s\n%d / %d aboard   ·   %d waiting at stop\nEvery %d city minutes in each direction" % [id+1,"At" if row.dwell else "Next",stop+1,net.stops[stop].name,row.load,net.capacity,service.waiting[stop],net.headway]
+		meet_button.text="Meet a rider"
+		meet_button.disabled=row.rider<0 and service.first_waiter[stop]<0
+		life_panel.reset_size()
+	life_panel.position.y=size.y-32-life_panel.size.y
+	queue_redraw()
 
 func show_trade(model,b:Dictionary,order:Dictionary,total:int,tick:int) -> void:
 	if b.is_empty(): return
@@ -408,6 +454,10 @@ func _draw_plan() -> void:
 			else: draw_polyline(path,ROUTE_COLORS[rank],[.75,1.15,2.0][rank]/scale_factor,true)
 	for i in land_dots.size():
 		draw_circle(land_dots[i],clampf(3.5*scale_factor,1.1,2.7)/scale_factor,USE_COLORS[land_uses[i]])
+	if bus_line.size()>1:
+		draw_polyline(bus_line,Color("#77dfe1"),2.7/scale_factor,true)
+		for p in bus_dots: draw_circle(p,2.5/scale_factor,IVORY)
+		draw_circle(bus_point,4.2/scale_factor,Color("#36c6da"))
 	if journey.size()>1:
 		draw_polyline(journey,Color("#fff0bc"),2.2/scale_factor,true)
 		draw_circle(journey[0],3.5/scale_factor,IVORY)

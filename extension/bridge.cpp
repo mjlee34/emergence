@@ -38,6 +38,9 @@ protected:
                          &CityModel::renewed_lot);
     ClassDB::bind_method(D_METHOD("street", "index"), &CityModel::street);
     ClassDB::bind_method(D_METHOD("lot", "index"), &CityModel::lot);
+    ClassDB::bind_method(D_METHOD("bus_network"), &CityModel::bus_network);
+    ClassDB::bind_method(D_METHOD("mobility", "fraction"),
+                         &CityModel::mobility);
     ClassDB::bind_method(D_METHOD("traffic", "fraction"), &CityModel::traffic);
   }
 
@@ -74,14 +77,14 @@ public:
     d["minute"] = absolute % city::minutes_per_day;
     d["day"] = 1 + absolute / city::minutes_per_day;
     d["construction_ticks"] = city::construction_ticks;
-    std::array<int, 4> totals{};
+    std::array<int, 7> totals{};
     PackedInt32Array occupants;
     occupants.resize(state.buildings().size());
     const auto &life = state.life();
     for (int id = 0; id < state.population(); ++id) {
       auto action = life.routine(id, state.tick());
       ++totals[int(action.activity)];
-      if (action.activity != city::Activity::Walking)
+      if (int(action.activity) < int(city::Activity::Walking))
         ++occupants.ptrw()[action.to];
     }
     d["occupants"] = occupants;
@@ -89,6 +92,9 @@ public:
     d["at_work"] = totals[1];
     d["shopping"] = totals[2];
     d["walking"] = totals[3];
+    d["waiting"] = totals[4];
+    d["riding"] = totals[5];
+    d["driving"] = totals[6];
     d["employed"] = life.employed();
     d["workforce"] = life.workforce();
     d["jobs"] = life.jobs();
@@ -121,6 +127,17 @@ public:
     d["shop"] = r.shop;
     d["seeking"] = r.seeks_work;
     d["activity"] = int(activity.activity);
+    d["mode"] = int(r.mode);
+    d["stop"] = activity.stop;
+    d["bus"] = activity.bus;
+    d["last_mile"] = activity.reverse && activity.bus >= 0;
+    d["from_car"] = activity.last_mile;
+    d["car_leg"] = activity.drive >= 0;
+    if (activity.bus >= 0) {
+      const auto &trip = r.trips[activity.from == r.home ? 0 : 1].bus;
+      d["alight_at"] = trip.to;
+      d["board_at"] = trip.from;
+    }
     d["target"] = activity.to;
     d["shift"] = r.leave_home + int(std::ceil(r.commute_minutes));
     d["finish"] = r.finish;
@@ -133,12 +150,32 @@ public:
     const auto &life = state.life();
     auto phase = life.routine(id, state.tick() + fraction);
     const auto &person = life.people()[id];
-    int route = phase.route >= 0 ? phase.route : person.commute;
-    if (route < 0)
-      route = person.errand;
-    if (route >= 0)
-      for (const auto &wp : life.paths()[route].points)
-        line.push_back(Vector2(wp.pos.x, wp.pos.z));
+    if (phase.drive >= 0) {
+      const auto &legs = life.drive_paths()[phase.drive];
+      for (double t = 0; t < legs.back().end_time; t += 2.) {
+        auto p = city::drive_pose(state, legs, t, .98).position;
+        line.push_back(Vector2(p.x, p.z));
+      }
+      auto p =
+          city::drive_pose(state, legs, legs.back().end_time, .98).position;
+      line.push_back(Vector2(p.x, p.z));
+    } else if (phase.bus >= 0) {
+      const auto &trip = person.trips[phase.from == person.home ? 0 : 1].bus;
+      for (const auto &p : life.paths()[trip.access].points)
+        line.push_back(Vector2(p.pos.x, p.pos.z));
+      auto &stops = life.transit().stops();
+      for (int at = trip.from; at != trip.to; at = stops[at].next)
+        for (const auto &p : stops[at].track.points)
+          line.push_back(Vector2(p.pos.x, p.pos.z));
+      const auto &last = life.paths()[trip.egress].points;
+      for (auto i = last.rbegin(); i != last.rend(); ++i)
+        line.push_back(Vector2(i->pos.x, i->pos.z));
+    } else {
+      int route = phase.route;
+      if (route >= 0)
+        for (const auto &p : life.paths()[route].points)
+          line.push_back(Vector2(p.pos.x, p.pos.z));
+    }
     return line;
   }
   Dictionary street_people(double fraction, Vector2 focus, double radius,
@@ -155,7 +192,11 @@ public:
       auto s = life.routine(id, state.tick() + fraction);
       const auto &b = state.buildings()[s.to];
       bool walking = s.activity == city::Activity::Walking;
-      if (!walking) {
+      if (s.activity == city::Activity::Riding ||
+          s.activity == city::Activity::Driving)
+        return;
+      const bool indoors = !walking && s.activity != city::Activity::Waiting;
+      if (indoors) {
         if (s.activity == city::Activity::Home ||
             (s.activity == city::Activity::Work && b.use == city::Use::Shops))
           return;
@@ -166,7 +207,7 @@ public:
       if (std::abs(p.pos.x - focus.x) > radius ||
           std::abs(p.pos.z - focus.y) > radius)
         return;
-      if (!walking) {
+      if (indoors) {
         int slot = outdoor[s.to]++;
         p.pos.x += slot * .86 * std::cos(b.yaw);
         p.pos.z -= slot * .86 * std::sin(b.yaw);
@@ -307,15 +348,104 @@ public:
     d["previous_floors"] = b.previous_floors;
     return d;
   }
-  PackedVector4Array traffic(double fraction) const {
-    PackedVector4Array out;
-    for (auto &v : state.vehicles()) {
-      double yaw;
-      auto p = state.vehicle_position(v, yaw, fraction);
-      out.push_back(
-          Vector4(p.x, state.street_height(state.roads()[v.edge], p), p.z, yaw));
+  Dictionary bus_network() const {
+    Dictionary data;
+    Array stops;
+    PackedVector2Array line;
+    const auto &net = state.life().transit();
+    for (const auto &stop : net.stops()) {
+      Dictionary row;
+      auto p = stop.platform;
+      row["position"] = Vector3(p.pos.x, p.height, p.pos.z);
+      row["yaw"] = stop.yaw;
+      const auto &road = state.roads()[stop.edge];
+      const auto &mid = road.path[4];
+      row["name"] =
+          road.type == city::RoadClass::Arterial
+              ? "Market Street"
+              : (mid.z < -40 ? "North Terrace"
+                             : (mid.x < -45 ? "West End" : "Civic Lane"));
+      row["next"] = stop.next;
+      row["direction"] = stop.direction;
+      stops.push_back(row);
+      if (stop.direction == 0)
+        for (auto &wp : stop.track.points)
+          line.push_back(Vector2(wp.pos.x, wp.pos.z));
     }
-    return out;
+    data["fleet"] = stops.is_empty() ? 0 : city::Transit::fleet;
+    data["stops"] = stops;
+    data["line"] = line;
+    data["capacity"] = city::Transit::capacity;
+    data["headway"] = city::Transit::headway;
+    return data;
+  }
+  Dictionary mobility(double fraction) const {
+    Dictionary data;
+    const auto &life = state.life();
+    const auto &net = life.transit();
+    const double tick = state.tick() + fraction,
+                 minute = tick / city::ticks_per_minute + city::opening_minute;
+    std::array<int, city::Transit::fleet> loads{}, first;
+    first.fill(-1);
+    PackedInt32Array waiting, first_waiter, drivers;
+    waiting.resize(net.stops().size());
+    first_waiter.resize(net.stops().size());
+    first_waiter.fill(-1);
+    PackedVector4Array cars;
+    for (int id = 0; id < state.population(); ++id) {
+      if (life.people()[id].mode == city::Mode::Walk)
+        continue;
+      auto s = life.routine(id, tick);
+      if (s.activity == city::Activity::Waiting) {
+        ++waiting.ptrw()[s.stop];
+        if (first_waiter[s.stop] < 0)
+          first_waiter.set(s.stop, id);
+      } else if (s.activity == city::Activity::Riding) {
+        ++loads[s.bus];
+        if (first[s.bus] < 0)
+          first[s.bus] = id;
+      } else if (s.drive >= 0) {
+        const auto &route = life.drive_paths()[s.drive];
+        double t = s.activity == city::Activity::Driving
+                       ? s.progress
+                       : (s.last_mile ? 1. : 0.);
+        auto car =
+            city::drive_pose(state, route, t * route.back().end_time, .98);
+        drivers.push_back(id);
+        cars.push_back(
+            Vector4(car.position.x, car.height, car.position.z, car.yaw));
+      }
+    }
+    Array buses;
+    for (int id = 0; !net.stops().empty() && id < city::Transit::fleet; ++id) {
+      auto v = net.bus(id, minute);
+      Dictionary row;
+      row["pose"] = Vector4(v.pose.pos.x, v.pose.height, v.pose.pos.z,
+                            v.pose.yaw - 1.57079632679);
+      row["stop"] = v.stop;
+      row["next"] = v.next;
+      row["dwell"] = v.dwelling;
+      const auto &stop = net.stops()[v.stop];
+      double since = std::fmod(minute - (id % 2) * city::Transit::headway +
+                                   city::Transit::cycle,
+                               city::Transit::cycle) -
+                     stop.arrival;
+      row["door_open"] =
+          v.dwelling ? std::clamp(std::min(since, 2. - since) * 4., 0., 1.)
+                     : 0.;
+      row["load"] = loads[id];
+      row["rider"] = first[id];
+      buses.push_back(row);
+    }
+    data["buses"] = buses;
+    data["cars"] = cars;
+    data["drivers"] = drivers;
+    data["waiting"] = waiting;
+    data["first_waiter"] = first_waiter;
+    return data;
+  }
+  PackedVector4Array traffic(double fraction) const {
+    return mobility(fraction)["cars"];
   }
 };
 #ifdef __APPLE__

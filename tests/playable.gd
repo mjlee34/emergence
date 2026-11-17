@@ -94,9 +94,9 @@ func run() -> void:
 	check(world.town.roads>initial.roads and world.town.buildings>initial.buildings,"Growth did not reach the scene")
 	check_construction(world,initial)
 	key(KEY_1)
-	var first:Vector3=world.town.cars[0].position
-	world._process(.5)
-	check(first.distance_to(world.town.cars[0].position)>.1,"Road traffic did not move")
+	var bus_start:Vector3=world.transit.buses[0].position
+	world._process(3.)
+	check(bus_start.distance_to(world.transit.buses[0].position)>.1,"Scheduled road traffic did not move")
 	var wheel:=InputEventMouseButton.new()
 	wheel.position=Vector2(480,280)
 	wheel.button_index=MOUSE_BUTTON_WHEEL_UP
@@ -135,7 +135,7 @@ func run() -> void:
 	check(world.orbit.size>small_extent,"Camera did not expand with the city")
 	check(world.town.sites.size()==world.state.buildings,"Redevelopment duplicated a parcel")
 	check(world.town.renewals==world.state.renewals,"Redevelopment did not reach the scene")
-	check(world.town.cars.size()==world.model.traffic(0).size(),"Traffic population did not reach the scene")
+	check(world.transit.cars.size()==world.model.traffic(0).size(),"Traffic population did not reach the scene")
 	world.hud.district_requested.emit(2)
 	check(world.hud.district_title=="Workshop district" and not world.orbit.following,"Workshop district focus failed")
 	world.hud.district_requested.emit(1)
