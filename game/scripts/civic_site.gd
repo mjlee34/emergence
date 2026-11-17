@@ -7,6 +7,10 @@ const COPPER:=Color("#79a398")
 const BRICK:=Color("#b17d63")
 const BLUE:=Color("#526b84")
 
+var monument_height:=0.
+var visible_monument_height:=0.
+var monument:MeshInstance3D
+
 func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 	model=sim
 	data=site
@@ -32,6 +36,13 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 		var b:=edge[(i+1)%edge.size()]
 		court.triangle(_p(0,0),_p(a.x,a.y),_p(b.x,b.y),LIMESTONE,Vector3.UP)
 		court.quad(_p(a.x,a.y),_p(b.x,b.y),_p(b.x,b.y,-.38),_p(a.x,a.y,-.38),STONE,Vector3.UP)
+	if data.kind>=6:
+		for i in 80:
+			var a:=TAU*i/80.
+			var b:=TAU*(i+1)/80.
+			for ring in [.87,.95]:
+				var inner:float=ring*r
+				court.quad(_arc(inner,a,.07),_arc(inner+.22,a,.07),_arc(inner+.22,b,.07),_arc(inner,b,.07),Color("#857969"),Vector3.UP)
 	var curb:=to_local(data.curb)
 	var half_width:=2.35 if data.kind in [3,4,5] else 1.2
 	var entry:float=-r*.75 if data.kind<=5 else -r+.2
@@ -53,6 +64,9 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 				g.taper(Vector3(x,.36,-3.+n*.56),.46,.33,.54+(n%2)*.12,8,Color("#597456"))
 	var structure=g.attach(fittings)
 	structure.position.y=_p(0,0).y
+	if data.kind>=6:
+		monument=structure
+		structure.scale=Vector3(3.4,4.6,3.4) if data.kind==6 else Vector3.ONE*6.6
 	# Face the torch towards water where the terrain survey found it.
 	if data.kind==7:
 		var shore:=Vector2.ZERO
@@ -63,6 +77,7 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 			if model.inland_water(p.x,p.y) or model.height_at(p.x,p.y)<=model.sea_level():
 				shore+=dir
 		if shore.length()>.1: structure.rotation.y=atan2(-shore.x,-shore.y)-rotation.y
+	if monument: _seat_monument()
 	if data.kind in [3,4,5]: _vehicle()
 	if data.kind<=5:
 		_tree(canopy,-r*.76,r*.39,.82)
@@ -70,6 +85,44 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 	else:
 		for side in [-1,1]:
 			_bench(side*r*.76,-1.,side*-PI*.5)
+
+func advance(time:float) -> void:
+	super.advance(time)
+	if not monument: return
+	var p:=smoothstep(data.started,data.opens,time)
+	var built:=smoothstep(.28,.97,p)
+	fittings.scale.y=1.
+	fittings.visible=p>.20
+	var local_height:=monument.get_aabb().end.y*built
+	monument.set_instance_shader_parameter("built_height",local_height+.001)
+	visible_monument_height=monument.position.y+local_height*monument.scale.y
+
+func _seat_monument() -> void:
+	var feet:Array[Vector2]=[Vector2.ZERO]
+	var width:=5.2*monument.scale.x
+	if data.kind==6:
+		width=2.05*monument.scale.x
+		feet.clear()
+		for x in [-5.15,5.15]:
+			for z in [-5.15,5.15]:
+				feet.append(Vector2(x,z)*monument.scale.x)
+	var floors:Array[float]=[]
+	var top:=monument.position.y
+	for foot in feet:
+		var floor_y:=top
+		for corner in [Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1),Vector2.ZERO]:
+			var q:Vector2=(foot+corner*width*.5).rotated(-monument.rotation.y)
+			var ground:=_p(q.x,q.y).y
+			floor_y=minf(floor_y,ground)
+			top=maxf(top,ground)
+		floors.append(floor_y-.8)
+	var foundation=Forms.new(true)
+	for i in feet.size():
+		var depth:=top-floors[i]
+		foundation.box(Vector3(feet[i].x,top-depth*.5,feet[i].y),Vector3(width,depth,width),LIMESTONE)
+	foundation.attach(fittings).rotation.y=monument.rotation.y
+	monument.position.y=top
+	monument_height=top+monument.get_aabb().end.y*monument.scale.y
 
 func _sign(caption:String,at:Vector3) -> void:
 	var label:=Label3D.new()
@@ -175,6 +228,10 @@ func _tower(g) -> void:
 					prev=arch
 	for deck in [Vector2(8.55,6.4),Vector2(17.5,3.65),Vector2(29.8,1.75)]:
 		g.box(Vector3.UP*deck.x,Vector3(deck.y,.55,deck.y),IRON)
+		# A lit cornice reads as an observation deck across the river at dusk.
+		g.finish=Forms.Finish.LAMP
+		g.box(Vector3.UP*(deck.x+.18),Vector3(deck.y+.05,.075,deck.y+.05),LIMESTONE)
+		g.finish=Forms.Finish.METAL
 		for side in [-1.,1.]:
 			g.box(Vector3(0,deck.x+.54,side*deck.y*.48),Vector3(deck.y,.10,.10),LIMESTONE)
 			g.box(Vector3(side*deck.y*.48,deck.x+.54,0),Vector3(.10,.10,deck.y),LIMESTONE)
@@ -184,15 +241,21 @@ func _tower(g) -> void:
 	g.taper(Vector3.UP*34.4,.11,.04,.24,8,LIMESTONE)
 
 func _statue(g) -> void:
-	for layer in [Vector3(6.8,.6,0),Vector3(5.8,.6,.6),Vector3(4.6,.5,1.2),Vector3(3.7,3.2,1.7),Vector3(4.4,.48,4.9)]:
+	for layer in [Vector3(5.2,.6,0),Vector3(4.8,.6,.6),Vector3(4.25,.5,1.2),Vector3(3.7,3.2,1.7),Vector3(4.4,.48,4.9)]:
 		g.box(Vector3.UP*(layer.z+layer.y*.5),Vector3(layer.x,layer.y,layer.x),LIMESTONE)
 	g.finish=Forms.Finish.METAL
+	for side in [-1.,1.]:
+		for bay in [-1.2,-.6,0.,.6,1.2]:
+			g.box(Vector3(bay,3.91,side*1.86),Vector3(.42,.85,.05),Color("#938974"))
+			g.box(Vector3(side*1.86,3.91,bay),Vector3(.05,.85,.42),Color("#938974"))
 	var base:=Vector3.UP*5.38
 	g.profile(base,[Vector3(1.35,0,.94),Vector3(1.18,1.1,.84),Vector3(.75,3.45,.62),Vector3(.98,4.85,.64),Vector3(.40,5.25,.37)],COPPER,16)
 	for i in 12:
 		var a:=TAU*i/12.
 		g.beam(base+Vector3(1.23*cos(a),.20,.88*sin(a)),base+Vector3(.78*cos(a+.63),4.6,.55*sin(a+.63)),.11,Color("#658e82"))
 	g.profile(base+Vector3.UP*5.17,[Vector3(.27,0,.29),Vector3(.48,.25,.46),Vector3(.50,.82,.44),Vector3(.33,1.,.34)],COPPER,14)
+	g.profile(base+Vector3(0,5.47,-.32),[Vector3(.25,0,.17),Vector3(.34,.30,.23),Vector3(.31,.51,.18)],Color("#86ab9b"),12)
+	g.beam(base+Vector3(0,5.89,-.50),base+Vector3(0,5.67,-.62),.11,COPPER)
 	g.taper(base+Vector3.UP*5.97,.56,.46,.20,12,COPPER)
 	for i in 7:
 		var a:=TAU*i/7.

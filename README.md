@@ -106,7 +106,7 @@ Every two simulation days the city surveys neighbourhoods without road access to
 
 Children within walking distance can attend a weekday two-hour class that fits around their other trips. Each hospital, fire station and police station operates one vehicle. For a simulated call at an occupied building, the available station with the fastest road route sends its vehicle to the scene and back. Calls are simulated service requests. Disease, fire spread and crime outcomes are outside this slice.
 
-One in five seeds qualifies for a landmark. After 24 days and 12,000 residents, the planner looks for a well-used street with an open view across water, or a major street axis near a civic space. An eligible city may grow without finding a site. A city can build one monument. The Beacon of Liberty faces the water and the lattice observation tower overlooks its urban approach. [Six in-game views](captures/civic-places.jpg)
+One in five seeds qualifies for a landmark. After 24 days and 12,000 residents, the planner looks for a well-used street with an open view across water, or a major street axis near a civic space. An eligible city may grow without finding a site. A city can build one monument. The Beacon of Liberty rises 94 metres above its foundation on the waterfront. The 159-metre lattice observation tower terminates a boulevard view. Their plazas reserve radii of 29 and 34 metres respectively before construction. Use **W** for the skyline or **Places** for a closer view. [Same-city skyline comparison](captures/landmark-skyline.jpg) · [Earlier civic prototypes](captures/civic-places.jpg)
 
 ### Local trade
 
@@ -140,7 +140,7 @@ The historical lunch capture used resident #1301 at tick 1110. Current assignmen
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 9 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 10 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. The preceding fixture and geographic formats can load if replay still matches their checksum. Older landmark siting decisions can produce a different layout. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -170,6 +170,7 @@ After building the extension and importing the project, run the integration chec
 "$GODOT" --headless --path game --script ../tests/playable.gd
 "$GODOT" --headless --path game --script ../tests/transport.gd
 "$GODOT" --headless --path game --script ../tests/green_spaces.gd
+"$GODOT" --headless --path game --script ../tests/landmark_view.gd
 "$GODOT" --headless --path game --script ../tests/weather.gd
 "$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
 ```

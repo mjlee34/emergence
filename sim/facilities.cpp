@@ -51,7 +51,7 @@ double suitability(const City &city, const Facility &f, double demand) {
   const auto &r = city.roads()[f.frontage];
   const Point curb = r.path[f.sample];
   for (const auto &old : city.facilities())
-    if (distance(old.center, f.center) < (f.kind == old.kind ? 60. : 29.))
+    if (distance(old.center, f.center) < std::max(f.radius + old.radius + 2., f.kind == old.kind ? 60. : 29.))
       return 0;
 
   std::array<double, 4> neighbours{};
@@ -89,8 +89,9 @@ double suitability(const City &city, const Facility &f, double demand) {
     }
   }
   double lo = city.height(f.center), hi = lo;
-  for (int k = 0; k < 8; ++k) {
-    double a = k * 3.141592653589793 / 4.;
+  int samples = is_landmark(f.kind) ? 32 : 8;
+  for (int k = 0; k < samples; ++k) {
+    double a = k * 6.283185307179586 / samples;
     Point p{f.center.x + f.radius * std::cos(a),
             f.center.z + f.radius * std::sin(a)};
     if (city.site().inland_water(p) || city.site().elevation(p) < 1.4 ||
@@ -257,14 +258,14 @@ double landmark_setting(const City &city, Facility &f, bool prefer_water) {
   for (int ray = 0; ray < 12; ++ray) {
     double angle = ray * 3.141592653589793 / 6.;
     bool open_water = true;
-    for (double step : {27., 39.}) {
+    for (double step : {46., 59.}) {
       Point p{f.center.x + step * std::sin(angle),
               f.center.z + step * std::cos(angle)};
       open_water &=
           city.site().inland_water(p) || city.site().elevation(p) <= 0.;
     }
-    if (open_water && clear_view({f.center.x+39.*std::sin(angle),
-                                  f.center.z+39.*std::cos(angle)}))
+    if (open_water && clear_view({f.center.x+59.*std::sin(angle),
+                                  f.center.z+59.*std::cos(angle)}))
       ++wet;
   }
   double vista = 0;
@@ -405,15 +406,17 @@ void City::plan_public_sites(bool allow_building) {
       continue;
     for (int side : {-1, 1})
       for (int k : {2, 6})
-        for (double setback : {17., 24.}) {
-          auto f = roadside_site(*this, FacilityKind::Tower, e, k, side, 9.,
+        for (double setback : {36., 44., 52., 60.}) {
+          // Survey the full forecourt before committing the monument. The
+          // perimeter also reserves a promenade outside its foundations.
+          auto f = roadside_site(*this, FacilityKind::Tower, e, k, side, 29.,
                                  setback, 5760);
-          double ground_score = suitability(*this, f, 1.);
-          if (ground_score <= 0.)
-            continue;
-          double score = ground_score *
-                         landmark_setting(*this, f, (draw >> 8) & 1) *
-                         std::log1p(frontage_visits(e));
+          if (suitability(*this, f, 1.) <= 0.) continue;
+          double setting = landmark_setting(*this, f, (draw >> 8) & 1);
+          if (setting <= 0.) continue;
+          if (f.kind == FacilityKind::Tower)
+            f = roadside_site(*this, f.kind, e, k, side, 34., setback, 5760);
+          double score = suitability(*this,f,1.) * setting * std::log1p(frontage_visits(e));
           if (score > highest) {
             highest = score;
             best = f;

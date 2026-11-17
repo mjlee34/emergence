@@ -180,6 +180,8 @@ func _sync() -> void:
 	for call in model.responders(remainder): calls[call.station]=call
 	for id in town.greens.size():
 		var site=town.greens[id]
+		if site.data.kind>=6 and site.fittings.visible:
+			orbit.landmark_peak=site.position+Vector3.UP*site.visible_monument_height
 		if site.data.kind in [3,4,5] and (site.on_call or calls.has(id)):
 			site.move_responder(calls.get(id,{}),state.tick+remainder)
 	transit.sync(model,town,remainder)
@@ -376,9 +378,14 @@ func _visit_green(id:=-1) -> void:
 	green_id=id
 	var green:Dictionary=town.greens[id].data
 	orbit.following=false
-	orbit.extent=47. if green.kind==6 else (25. if green.kind==7 else green.radius*2.9)
+	orbit.extent=green.radius*2.9
 	orbit.elevation=.39 if green.kind>=6 else .60
-	orbit.pivot=green.pos+Vector3.UP*([.85,.85,2.8,4.3,2.9,3.,16.,8.][green.kind] as float)
+	if green.kind>=6:
+		var height:float=town.greens[id].monument_height
+		orbit.extent=maxf(orbit.extent,height*1.34)
+		orbit.pivot=green.pos+Vector3.UP*height*.48
+	else:
+		orbit.pivot=green.pos+Vector3.UP*([.85,.85,2.8,4.3,2.9,3.][green.kind] as float)
 	orbit.azimuth=_clear_angle(orbit.pivot,green.yaw+PI+.38,Vector3.RIGHT*3.)
 	orbit.update_view()
 
@@ -406,6 +413,16 @@ func _skyline() -> void:
 	orbit.extent=clampf((bounds.z-bounds.x)*.48,62.,210.)
 	var solar:Vector3=weather.sun
 	orbit.azimuth=atan2(-solar.x,-solar.z)+.10
+	for site in town.greens:
+		if site.data.kind<6 or state.tick<site.data.opens: continue
+		# Frame the monument with the urban area on either side of it.
+		var middle:=Vector3(x,0.,z)
+		var base:Vector3=site.position
+		var blend:Vector3=middle.lerp(base,.45)
+		var height:float=site.monument_height
+		orbit.pivot=Vector3(blend.x,base.y+height*.41,blend.z)
+		orbit.extent=maxf(height*1.34,orbit.skyline_extent(orbit.pivot,base+Vector3.UP*height,bounds))
+		break
 	orbit.update_view()
 	var lift:float=model.height_at(orbit.position.x,orbit.position.z)+4.-orbit.position.y
 	if lift>0.:

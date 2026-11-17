@@ -369,9 +369,23 @@ void check_public_places() {
     int total=0;
     for(const auto &f:city.facilities()) if(is_landmark(f.kind)) {
       ++total;
+      CHECK(f.radius >= (expected==FacilityKind::Tower ? 34. : 29.));
       CHECK(f.kind==expected && f.started>=24*minutes_per_day*ticks_per_minute);
       CHECK(city.site().elevation(f.center)>1.4 && !city.site().inland_water(f.center));
-      if(expected==FacilityKind::Statue) CHECK(std::abs(f.center.x-river_center(f.center.z))<60.);
+      for (const auto &lot : city.buildings())
+        CHECK(distance(f.center,lot.pos) >= f.radius + 6.4);
+      for (const auto &nearby : city.facilities())
+        if (&nearby != &f) CHECK(distance(f.center, nearby.center) >= f.radius + nearby.radius + 2.);
+      if (expected==FacilityKind::Statue) {
+        int water_views=0;
+        for (int ray=0; ray<12; ++ray) {
+          double a=ray*3.141592653589793/6.;
+          Point shore{f.center.x+46.*std::sin(a),f.center.z+46.*std::cos(a)};
+          Point water{f.center.x+59.*std::sin(a),f.center.z+59.*std::cos(a)};
+          water_views += city.site().elevation(shore)<=0 && city.site().elevation(water)<=0;
+        }
+        CHECK(water_views>=2);
+      }
       if(expected==FacilityKind::Tower)
         CHECK(std::any_of(city.roads().begin(),city.roads().end(),[&](auto &r){
           return r.type==RoadClass::Arterial && distance(r.path[4],f.center)<100.; }));
@@ -380,8 +394,8 @@ void check_public_places() {
   };
   c.advance(320000-c.tick());
   inspect(c,FacilityKind::Statue);
-  City other(2);
-  other.advance(200000);
+  City other(13);
+  other.advance(280000);
   inspect(other,FacilityKind::Tower);
 }
 

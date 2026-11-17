@@ -4,6 +4,7 @@ var azimuth:=-.58
 var elevation:=.59
 var extent:=158.
 var following:=true
+var landmark_peak:=Vector3.ZERO
 var city_bounds:=Vector4(-115,-70,65,70)
 var orbiting:=false
 var panning:=false
@@ -20,6 +21,22 @@ func update_view() -> void:
 	position=pivot+Vector3(sin(azimuth)*cos(elevation),sin(elevation),cos(azimuth)*cos(elevation))*(extent*.5/tan(deg_to_rad(fov)*.5))
 	look_at(pivot,Vector3.UP)
 
+# In a perspective view, a tower on the near bank needs more room than
+# one on the horizon. Project the city's ground corners and the spire.
+func skyline_extent(center:Vector3,peak:Vector3,bounds:Vector4) -> float:
+	var back:=Vector3(sin(azimuth)*cos(elevation),sin(elevation),cos(azimuth)*cos(elevation))
+	var right:=Vector3(cos(azimuth),0,-sin(azimuth))
+	var up:=back.cross(right)
+	var viewport_size:=get_viewport().get_visible_rect().size
+	var aspect:=viewport_size.x/viewport_size.y
+	var lens:=tan(deg_to_rad(fov)*.5)
+	var needed:=0.
+	for point:Vector3 in [peak,Vector3(bounds.x,0,bounds.y),Vector3(bounds.z,0,bounds.y),Vector3(bounds.x,0,bounds.w),Vector3(bounds.z,0,bounds.w)]:
+		var offset:=point-center
+		var half_screen:=maxf(absf(offset.dot(right))/aspect,absf(offset.dot(up)))
+		needed=maxf(needed,2.*(half_screen*1.10+lens*offset.dot(back)))
+	return needed
+
 func frame_city(bounds:Vector4,weight:float) -> void:
 	city_bounds=bounds
 	if not following: return
@@ -31,8 +48,12 @@ func frame_city(bounds:Vector4,weight:float) -> void:
 	var horizontal:=(dx*right+dz*depth)*viewport_size.y/viewport_size.x
 	var vertical:=(dz*right+dx*depth)*sin(elevation)
 	var goal:=clampf(maxf(horizontal,vertical)*1.05+31.,160.,1000.)
+	var center:=Vector3((bounds.x+bounds.z)*.5,8,(bounds.y+bounds.w)*.5)
+	if landmark_peak!=Vector3.ZERO:
+		center.y=maxf(center.y,landmark_peak.y*.35)
+		goal=maxf(goal,skyline_extent(center,landmark_peak,bounds))
 	extent=lerpf(extent,goal,weight)
-	pivot=pivot.lerp(Vector3((bounds.x+bounds.z)*.5,8,(bounds.y+bounds.w)*.5),weight)
+	pivot=pivot.lerp(center,weight)
 	update_view()
 
 func home() -> void:

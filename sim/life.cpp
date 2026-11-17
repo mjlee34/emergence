@@ -636,7 +636,7 @@ PersonPose Life::pose(const City &c, int id, const DailyState &s,
     const auto &f = c.facilities()[s.facility];
     // Enter at the gate, stroll around the planted court, and leave through the
     // same gate.
-    const double radius = f.radius * .62, stem = f.radius - radius;
+    const double radius = f.radius * (is_landmark(f.kind) ? .91 : .62), stem = f.radius - radius;
     const double loop = 2. * 3.141592653589793 * radius;
     double progress = std::clamp(s.progress, 0., 1.);
     // Some visitors linger partway around the loop to watch play or enjoy the
