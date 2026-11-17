@@ -29,7 +29,101 @@ static func finish(lot:Dictionary) -> int:
 static func storey(lot:Dictionary) -> float:
 	return 3.55 if finish(lot)>=Forms.Finish.CURTAIN_WALL else 3.05
 
+# A raised band of windows brings light into the founding market hall.
+static func market_lantern(g,w:float,d:float,h:float) -> void:
+	var timber:=Color("#554f47")
+	var copper:=Color("#647970")
+	var rim:=Vector3(0,h+.44,0)
+	g.finish=Forms.Finish.PLAIN
+	g.box(rim,Vector3(w*.80,.26,d*.58),timber)
+	g.finish=Forms.Finish.GLASS
+	g.box(rim+Vector3.UP*.90,Vector3(w*.73,1.58,d*.48),Color("#aab5a7"))
+	g.finish=Forms.Finish.PLAIN
+	for side in [-1.,1.]:
+		for i in 6:
+			g.box(rim+Vector3((i/5.-.5)*w*.74,.88,side*d*.25),Vector3(.10,1.6,.12),timber)
+	var eave:=h+2.13
+	for side in [-1.,1.]:
+		g.quad(Vector3(-w*.41,eave,side*d*.31),Vector3(w*.41,eave,side*d*.31),Vector3(w*.33,eave+1.2,0),Vector3(-w*.33,eave+1.2,0),copper,Vector3.UP)
+		g.triangle(Vector3(side*w*.41,eave,-d*.31),Vector3(side*w*.41,eave,d*.31),Vector3(side*w*.33,eave+1.2,0),copper,Vector3.RIGHT*side)
+
+# The top dwelling sits inside the roof. Projecting dormers and the change
+# in pitch remain readable when the street-level meshes switch out.
+static func mansion_block(g,lot:Dictionary,w:float,d:float) -> void:
+	var h:float=lot.floors*3.05
+	var eave:=h-3.05
+	var stone:=Color("#c9c3b6")
+	var slate:Color=[Color("#545e63"),Color("#65625d"),Color("#536566")][(lot.style/3)%3]
+	var facade:=Forms.Finish.BRICK_FRONT if lot.style%3 else Forms.Finish.LIMESTONE_FRONT
+	_section(g,Vector2.ZERO,w,d,0.,eave,.18,facade,Color("#e6dfd2"),stone)
+	g.finish=Forms.Finish.PLAIN
+	g.box(Vector3.UP*eave,Vector3(w+.38,.30,d+.38),stone)
+	var lower:=Vector2(w*.5+.15,d*.5+.15)
+	var upper:=Vector2(w*.5-.85,d*.5-.80)
+	g.finish=Forms.Finish.SLATE
+	for side in [-1.,1.]:
+		g.quad(Vector3(-lower.x,eave,side*lower.y),Vector3(lower.x,eave,side*lower.y),Vector3(upper.x,h,side*upper.y),Vector3(-upper.x,h,side*upper.y),slate,Vector3.UP)
+		g.quad(Vector3(side*lower.x,eave,-lower.y),Vector3(side*lower.x,eave,lower.y),Vector3(side*upper.x,h,upper.y),Vector3(side*upper.x,h,-upper.y),slate,Vector3.UP)
+	g.finish=Forms.Finish.FELT
+	g.box(Vector3(0,h,0),Vector3(2.*upper.x,.14,2.*upper.y),ROOF)
+	var bays:=maxi(2,floori(w/3.6))
+	for side in [-1.,1.]:
+		for i in bays:
+			var x:float=((i+.5)/bays-.5)*w
+			var window:=Vector3(x,eave+1.23,side*(d*.5-.18))
+			g.finish=Forms.Finish.PLAIN
+			g.box(window,Vector3(1.38,1.8,.74),stone)
+			g.finish=Forms.Finish.GLASS
+			g.box(window+Vector3(0,.02,side*.37),Vector3(1.02,1.43,.06),Color("#576766"))
+			g.finish=Forms.Finish.PLAIN
+			g.box(window+Vector3.UP*.94,Vector3(1.55,.19,.88),slate)
+	g.finish=Forms.Finish.BRICK
+	g.box(Vector3(w*.29,h+.53,-d*.23),Vector3(.79,1.15,.64),Color("#a18e80"))
+
+# The existing corner business occupies all of these floors. Its upper
+# storeys pull back towards the street corner as the parcel is redeveloped.
+static func corner_building(g,lot:Dictionary,w:float,d:float) -> void:
+	var floors:int=lot.floors
+	var storey_h:=storey(lot)
+	var h:=floors*storey_h
+	var tall:=floors>=10
+	var stone:=Color("#ded7c7")
+	var trim:=Color("#aaaba1")
+	var metal:Color=[Color("#697d74"),Color("#717b85"),Color("#83786a")][lot.style%3]
+	var setback:=storey_h*clampi(floori(floors*.52),2,7)
+	_section(g,Vector2.ZERO,w,d,0.,setback,.26,Forms.Finish.LIMESTONE_FRONT,stone,trim)
+	var center:=Vector2(w*.10*(1. if lot.style%2 else -1.),d*.065*float(lot.front_sign))
+	var width:=w*.70
+	var depth:=d*.76
+	var shoulder:=h-storey_h if floors>=6 else h
+	var skin:=Forms.Finish.BRONZE_FRONT if tall else Forms.Finish.LIMESTONE_FRONT
+	_section(g,center,width,depth,setback,shoulder,minf(width,depth)*.11,skin,Color("#e5ded2"),trim)
+	if shoulder<h:
+		width*=.82
+		depth*=.85
+		_section(g,center,width,depth,shoulder,h,.4,skin,stone,trim)
+	g.finish=Forms.Finish.PLAIN
+	for side in [-1.,1.]:
+		for column in [-.31,.31]:
+			g.box(Vector3(center.x+width*column,(setback+shoulder)*.5,center.y+side*(depth*.5+.035)),Vector3(.18,shoulder-setback,.17),trim)
+	var base:=Vector3(center.x,h,center.y)
+	var radius:=minf(width,depth)*.43
+	g.taper(base,radius*1.1,radius*1.1,.36,8,trim,PI/8.)
+	g.finish=Forms.Finish.GLASS
+	g.taper(base+Vector3.UP*.36,radius,radius,1.55,8,Color("#829996"),PI/8.)
+	g.finish=Forms.Finish.PLAIN
+	var eave:=base+Vector3.UP*1.91
+	var crown:=radius*(1.15 if tall else .87)
+	g.taper(eave,radius*1.12,radius*.30,crown,8,metal,PI/8.)
+	g.taper(eave+Vector3.UP*crown,radius*.30,.07,1.10,8,metal,PI/8.)
+
 static func add(g,lot:Dictionary,w:float,d:float,nearby:bool) -> void:
+	if lot.main_street_corner:
+		corner_building(g,lot,w+1.15,d+.58)
+		return
+	if lot.use==0 and lot.floors<=8 and lot.style%5 in [0,1,2]:
+		mansion_block(g,lot,w,d)
+		return
 	var s:int=lot.style
 	var floors:int=lot.floors
 	var facade:=finish(lot)
@@ -89,7 +183,8 @@ static func add(g,lot:Dictionary,w:float,d:float,nearby:bool) -> void:
 	g.finish=Forms.Finish.METAL
 	if tall and form==1:
 		# A folded zinc crown continues the chamfered glass shaft to a ridge.
-		var ridge:=top+Vector3(width*.14,3.3,0.)
+		var rise:=clampf(height*.075,2.6,7.4)
+		var ridge:=top+Vector3(width*.14,rise,0.)
 		for side in [-1.,1.]:
 			var left:=top+Vector3(-width*.43,.10,side*depth*.40)
 			var right:=top+Vector3(width*.43,.10,side*depth*.40)

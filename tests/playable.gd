@@ -112,9 +112,17 @@ func run() -> void:
 	wheel.position=Vector2(480,280)
 	wheel.button_index=MOUSE_BUTTON_WHEEL_UP
 	wheel.pressed=true
+	key(KEY_W)
+	check(world.watching_skyline,"Skyline tracking did not start")
+	var bearing:float=world.orbit.azimuth
+	var first_revision:Vector3i=world.skyline_revision
+	world.model.step(21600)
+	world.state=world.model.summary()
+	world._process(.25)
+	check(world.skyline_revision!=first_revision and is_equal_approx(bearing,world.orbit.azimuth),"City growth changed the skyline viewing direction or failed to reframe")
 	var before_zoom:float=world.orbit.size
 	root.push_input(wheel)
-	check(world.orbit.size<before_zoom,"Scroll did not zoom")
+	check(world.orbit.size<before_zoom and not world.watching_skyline,"Scroll did not leave skyline tracking and zoom")
 	var down:=InputEventMouseButton.new()
 	down.position=wheel.position
 	down.button_index=MOUSE_BUTTON_LEFT

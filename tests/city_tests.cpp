@@ -396,8 +396,8 @@ void check_public_places() {
   City shore(33);
   shore.advance(330000);
   inspect(shore, FacilityKind::WaterfrontMonument);
-  City other(262);
-  other.advance(468000);
+  City other(481);
+  other.advance(145000);
   inspect(other,FacilityKind::BoulevardMonument);
   // Sample design draws independently of how often a particular fixture
   // supplies the necessary waterfront or boulevard site.
@@ -495,6 +495,32 @@ int main() {
   check_geographic_terrain();
   check_market();
   check_construction();
+  // Prior surveyed-street games replay to their original checksum. Their
+  // first new planning survey can then choose a commercial corner.
+  auto prior = restore("EMERGENCE-12 147 14400 12410467977675168576 0 -1");
+  CHECK(prior && prior->main_street_corner() < 0);
+  prior->advance(7200);
+  CHECK(prior->main_street_corner() >= 0 && restore(checkpoint(*prior)));
+  for (unsigned seed : {147u, 42u, 2026u}) {
+    City small(seed);
+    while (small.population() < 2700 && small.tick() < 80000)
+      small.advance(720);
+    int corner = small.main_street_corner();
+    CHECK(corner >= 0 && small.buildings()[corner].use == Use::Shops);
+    CHECK(small.life().occupancies()[corner].hired > 0 &&
+          small.buildings()[corner].floors >= 4);
+    int early = small.buildings()[corner].floors;
+    while (small.population() < 9000 && small.tick() < 180000)
+      small.advance(720);
+    CHECK(small.main_street_corner() == corner &&
+          small.buildings()[corner].floors > early);
+    auto &b = small.buildings()[corner];
+    CHECK(std::count_if(small.buildings().begin(), small.buildings().end(),
+                        [&](const auto &nearby) {
+                          return &nearby != &b && nearby.floors >= 4 &&
+                                 distance(nearby.pos, b.pos) < 90.;
+                        }) >= 2);
+  }
   check_public_places();
   auto start = std::chrono::steady_clock::now();
   for (auto seed : {147u, 42u, 2026u}) {

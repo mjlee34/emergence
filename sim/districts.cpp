@@ -138,6 +138,34 @@ void City::reserve_frontage(Building &b) const {
   }
 }
 
+void City::choose_main_street_corner() {
+  const auto &occupied = life_.occupancies();
+  double best = 0.;
+  for (int i = 0; i < int(occupied.size()); ++i) {
+    const auto &lot = buildings_[i];
+    if (lot.use != Use::Shops || occupied[i].hired == 0)
+      continue;
+    const auto &r = roads_[lot.frontage];
+    if (r.type == RoadClass::Local || r.opens > tick_)
+      continue;
+    auto degree = std::max(nodes_[r.a].edges.size(), nodes_[r.b].edges.size());
+    double visits = frontage_visits(lot.frontage);
+    if (degree < 3 || visits < 95.)
+      continue;
+    double access = 1.;
+    for (const auto &stop : life_.transit().stops())
+      if (distance(stop.platform.pos, lot.pos) < 55.) {
+        access = 1.25;
+        break;
+      }
+    double score = access * std::sqrt(visits) * occupied[i].hired;
+    if (score > best) {
+      best = score;
+      main_street_corner_ = i;
+    }
+  }
+}
+
 void City::locate_centres() {
   // A cluster needs established jobs and accessible streets. Once established
   // its centre persists, so adjacent parcels can redevelop over many years.

@@ -43,10 +43,11 @@ double City::street_height(const Road &road, Point p) const {
   return road_height(road, p, site_);
 }
 City::City(uint32_t seed, Site site, int township_through_tick,
-           int old_roads_through_tick)
+           int old_roads_through_tick, int old_skyline_through_tick)
     : site_(std::move(site)), seed_(seed), random_(seed),
       township_through_tick_(township_through_tick),
-      old_roads_through_tick_(old_roads_through_tick) {
+      old_roads_through_tick_(old_roads_through_tick),
+      old_skyline_through_tick_(old_skyline_through_tick) {
   auto unit = [&] { return double(draw() >> 8) / 16777216.; };
   grid_phase_ = 6.2831853 * unit();
   grid_angle_ = .62 * (unit() - .5);
@@ -281,6 +282,22 @@ int City::target_floors(const Building &b) const {
   double visits = frontage_visits(b.frontage);
   bool frontage = roads_[b.frontage].type != RoadClass::Local;
   if (tick_ > old_roads_through_tick_) {
+    int main_street = 0;
+    if (main_street_corner_ >= 0 && visits >= 95.) {
+      const auto &corner = buildings_[main_street_corner_];
+      double d = distance(corner.pos, b.pos);
+      // A busy corner is redeveloped first. The blocks within a short walk
+      // can then support a middle height between that corner and the houses.
+      if (d < .01) {
+        main_street = std::min(b.wing > 0. ? 26 : 15, 4 + population_ / 1350);
+      } else if (d < 90. && frontage) {
+        double demand = std::min(1., visits / 420.);
+        int rise = std::min(7, 1 + population_ / 1750);
+        main_street = base + int(rise * demand * (1. - d / 90.));
+      }
+    }
+    if (main_street && population_ < 3000)
+      return std::max(base, main_street);
     if (population_ < 3000 || visits < 110.)
       return base;
     double proximity = 0.;
@@ -299,7 +316,7 @@ int City::target_floors(const Building &b) const {
       if (b.wing >= 2. && proximity > .56 && b.style % 5 == 0)
         shoulder += int(maturity * (7. + b.style % 7));
     }
-    return std::min(shoulder, b.wing >= 2. ? 32 : 14);
+    return std::max(main_street, std::min(shoulder, b.wing >= 2. ? 32 : 14));
   }
   if (population_ >= 6500 && visits >= 530. && frontage)
     return 9 + b.style % 8;
@@ -503,6 +520,8 @@ uint64_t City::digest() const {
   for (const auto &r : responses_) { mix(r.station); mix(r.lot); mix(r.start); mix(r.end); }
   mix(life_.digest());
   mix(economy_.digest());
+  if (main_street_corner_ >= 0)
+    mix(main_street_corner_ + 1);
   mix(seed_);
   mix(random_);
   mix(tick_);

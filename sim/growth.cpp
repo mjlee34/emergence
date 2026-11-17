@@ -34,6 +34,9 @@ void City::survey_trips() {
   }
   if (tick_ > old_roads_through_tick_)
     locate_centres();
+  if (tick_ > old_skyline_through_tick_ && main_street_corner_ < 0 &&
+      population_ >= 1750)
+    choose_main_street_corner();
 }
 
 double City::frontage_visits(int edge) const {

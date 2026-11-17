@@ -440,6 +440,7 @@ public:
     d["floors"] = b.floors;
     d["started"] = b.started;
     d["previous_floors"] = b.previous_floors;
+    d["main_street_corner"] = index == state.main_street_corner();
     return d;
   }
   Dictionary facility(int id) const {

@@ -2,7 +2,13 @@
 
 Choose a point on Earth and descend from the map to a new settlement on its measured terrain. Gimje Plain, the Loire Valley and the Sacramento Valley are bundled for offline play. [Watch the flight into Gimje](captures/settlement-flight.mp4)
 
-On the inland Gimje Plain, the same seed grows from 1,710 residents and a three-storey skyline to 55,926 residents, 273 street segments and a 32-storey centre. All three panels use the same camera position, heading and zoom. [Full street network](captures/gimje-street-network.jpg) · [Skyline from the neighbourhood](captures/gimje-city-skyline.jpg)
+Press **W** to watch a town acquire its skyline. Once an occupied commercial corner attracts enough trips, it can grow above the houses. Nearby busy frontages can redevelop into mid-rise blocks. The camera keeps its bearing and eases back as roofs rise. Orbiting, panning or zooming returns control to the observer.
+
+Gimje seed 147 grew from 1,754 residents and a three-storey roofline to 27,505 residents and a 23-storey skyline. The time-lapse samples 28 dry afternoons during the first 53 simulation days. [Watch the skyline develop](captures/gimje-skyline-growth.mp4)
+
+![The same town at 1,952, 4,076, and 12,605 residents](captures/gimje-small-skyline.jpg)
+
+In the preceding street-layout study on the inland Gimje Plain, the same seed grew from 1,710 residents and a three-storey skyline to 55,926 residents, 273 street segments and a 32-storey centre. All three panels use the same camera position, heading and zoom. [Full street network](captures/gimje-street-network.jpg) · [Skyline from the neighbourhood](captures/gimje-city-skyline.jpg)
 
 ![The same streets at 1,710, 12,795 and 55,926 residents](captures/gimje-district-growth.jpg)
 
@@ -38,7 +44,7 @@ The simulation starts at **1×** with one local minute passing per real second. 
 | --- | --- |
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
-| Watch the skyline toward the sun | W or the weather indicator beneath the place name |
+| Track the skyline as the city develops | W or the weather indicator beneath the place name |
 | Visit parks, public services and landmarks | Places menu, P to cycle, or click the grounds |
 | Follow the nearest active construction project | G or Construction |
 | Follow a resident | Click a pedestrian or private car, or choose Meet a resident |
@@ -150,7 +156,7 @@ The historical lunch capture used resident #1301 at tick 1110. Current assignmen
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 12 and geographic version 8 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. When opening a previous checkpoint, the simulation reconstructs its historical boundary and street planner through the saved tick, verifies its checksum, and surveys new connections as it continues. The new record stores that transition for future replays. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 13 and geographic version 9 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. When opening a previous checkpoint, the simulation reconstructs its historical boundary, street planner, and redevelopment rules through the saved tick, verifies its checksum, and surveys new connections as it continues. The new record stores that transition for future replays. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -179,7 +185,7 @@ By default the profiler advances 40,000 ticks. Pass increasing target ticks to m
 "$GODOT" --path game --resolution 1280x760 --disable-vsync --script ../tests/frame_profile.gd -- 1181800 overview 1000
 ```
 
-With the surveyed street planner, seed 147 reached 105,858 residents, 481 street segments and 1,387 buildings at tick 1,200,000. The developed bounds spanned 1,614 × 1,074 m. A 60-frame sample of the 1000× overview near 50,000 residents on an M4 Pro at 1280 × 760 measured 43 ms median and 53 ms at the 95th percentile. [Earlier regional benchmark capture](captures/regional-scale.jpg)
+In the preceding street-layout benchmark, seed 147 reached 105,858 residents, 481 street segments and 1,387 buildings at tick 1,200,000. The developed bounds spanned 1,614 × 1,074 m. A 60-frame sample of the 1000× overview near 50,000 residents on an M4 Pro at 1280 × 760 measured 43 ms median and 53 ms at the 95th percentile. [Earlier regional benchmark capture](captures/regional-scale.jpg)
 
 The simulation retains individual homes, jobs, wallets and travel choices. The market indexes residents by their scheduled hours, settles attendance first, then applies wages and purchases in resident order. The renderer shows up to 240 nearby private cars including the tracked driver, while bus loads cover the entire network. Distant buildings use simpler meshes. Outside the original valley, zooming in streams up to nine fine terrain tiles around the camera focus.
 

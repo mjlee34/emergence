@@ -139,7 +139,7 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 
 func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	var lot:Dictionary=model.lot(id)
-	if market_lot<0 and lot.use==1 and lot.floors<4: market_lot=id
+	if market_lot<0 and lot.use==1: market_lot=id
 	lot.market_hall=id==market_lot
 	if replace: lots[id]=lot
 	else: lots.append(lot)
@@ -283,7 +283,8 @@ func _district_block(lot:Dictionary) -> MeshInstance3D:
 		else:
 			g.finish=Forms.Finish.FELT
 			g.box(Vector3(0,h+.2,0),Vector3(w+.4,.45,d+.4),roof)
-			g.box(Vector3(-.52,h+.92,0),Vector3(w*.52,1.4,d*.48),Color("#929c95"))
+			if lot.market_hall: Architecture.market_lantern(g,w,d,h)
+			else: g.box(Vector3(-.52,h+.92,0),Vector3(w*.52,1.4,d*.48),Color("#929c95"))
 	var site=g.attach(self)
 	site.position=lot.pos
 	site.rotation.y=lot.yaw
@@ -585,7 +586,7 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 		g.finish=Forms.Finish.FELT
 		g.box(Vector3(0,h+.24,0),Vector3(w-.32,.08,d-.32),Color("#666961"))
 		g.finish=Forms.Finish.PLAIN
-		g.box(Vector3(-w*.24,h+.64,d*.18),Vector3(1.38,.67,.99),Color("#919892"))
+		if not lot.market_hall: g.box(Vector3(-w*.24,h+.64,d*.18),Vector3(1.38,.67,.99),Color("#919892"))
 		for k in 8:
 			g.box(Vector3(-w*.24-.51+k*.14,h+.65,d*.18+.50),Vector3(.056,.46,.028),Color("#4f5856"))
 		g.taper(Vector3(-w*.24,h+.98,d*.18),.32,.32,.047,14,Color("#535c58"))
@@ -596,6 +597,7 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 		_gable(g,w,d,h,Color("#698181"),wall)
 		g.taper(Vector3(w*.34,h-.5,0),.46,.33,3.0,8,Color("#a9775e"))
 	if use==1 and lot.market_hall:
+		Architecture.market_lantern(g,w,d,h)
 		# Stepped masonry parapet on the oldest shop on the high street.
 		var face:float=int(lot.front_sign)*(d*.5-.07)
 		g.finish=Forms.Finish.BRICK

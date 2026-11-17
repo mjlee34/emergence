@@ -79,7 +79,8 @@ struct Event {
 class City {
 public:
   explicit City(uint32_t seed = 147, Site site = {},
-                int township_through_tick = 0, int old_roads_through_tick = -1);
+                int township_through_tick = 0, int old_roads_through_tick = -1,
+                int old_skyline_through_tick = -1);
   const Site &site() const { return site_; }
   double height(Point p) const { return site_.height(p); }
   Point planning_extent() const;
@@ -103,6 +104,8 @@ public:
   std::vector<Vehicle> vehicles() const;
   const auto &renewals() const { return renewals_; }
   const auto &bounds() const { return bounds_; }
+  int main_street_corner() const { return main_street_corner_; }
+  int old_skyline_through_tick() const { return old_skyline_through_tick_; }
   const auto &district_centres() const { return centres_; }
   const auto &responses() const { return responses_; }
   const auto &events() const { return events_; }
@@ -116,6 +119,8 @@ private:
   Site site_;
   uint32_t seed_, random_;
   int township_through_tick_, old_roads_through_tick_;
+  int old_skyline_through_tick_, main_street_corner_ = -1;
+  void choose_main_street_corner();
   double grid_angle_, grid_phase_, block_width_;
   Point workshop_site_;
   Point street_point(double column, double row) const;

@@ -44,6 +44,11 @@ var fixed_site:=Vector2i(-1,-1)
 var capture_tick:=0
 var capture_detail:=false
 var capture_skyline:=false
+var watching_skyline:=false
+var skyline_revision:=Vector3i(-1,-1,-1)
+var skyline_target:=Vector3.ZERO
+var skyline_size:=0.
+var skyline_monument_opens:=-1
 var atlas:=false
 var street_capture:=false
 var meet_capture:=false
@@ -151,6 +156,17 @@ func _process(delta:float) -> void:
 		orbit.azimuth=lerp_angle(orbit.azimuth,observer_angle,1.-exp(-delta*3.))
 		orbit.update_view()
 	if watching_construction: _follow_works(1.-exp(-delta*3.))
+	if watching_skyline:
+		if skyline_revision!=_skyline_revision():
+			var current:=orbit.pivot
+			var size_before:=orbit.extent
+			_compose_skyline(false)
+			orbit.pivot=current
+			orbit.extent=size_before
+		var blend:=1.-exp(-delta*1.65)
+		orbit.pivot=orbit.pivot.lerp(skyline_target,blend)
+		orbit.extent=lerpf(orbit.extent,skyline_size,blend)
+		orbit.update_view()
 
 func _sync() -> void:
 	var info:Dictionary={}
@@ -183,6 +199,7 @@ func _sync() -> void:
 	for call in model.responders(remainder): calls[call.station]=call
 	for id in town.greens.size():
 		var site=town.greens[id]
+		if site.data.kind>=6: skyline_monument_opens=site.data.opens
 		if site.data.kind>=6 and site.fittings.visible:
 			if site.data.model=="clock": site.set_clock(state.minute)
 			orbit.landmark_peak=site.position+Vector3.UP*site.visible_monument_height
@@ -234,6 +251,7 @@ func _sync() -> void:
 	land.water_material.set_shader_parameter("wind",weather.wind)
 
 func _toggle_construction() -> void:
+	watching_skyline=false
 	_leave_green()
 	following_bus=-1
 	watching_construction=not watching_construction
@@ -256,6 +274,8 @@ func _leave_green() -> void:
 		hud.construction_note=""
 
 func _leave_site() -> void:
+	if watching_skyline: hud.district_title=""
+	watching_skyline=false
 	_leave_green()
 	following_bus=-1
 	if watching_construction: _toggle_construction()
@@ -416,15 +436,23 @@ func _skyline() -> void:
 	watching=false
 	selected=-1
 	hud.district_title="City skyline"
+	watching_skyline=true
+	_compose_skyline(true)
+
+func _skyline_revision() -> Vector3i:
+	# A completed monument can change the composition between two lot starts.
+	return Vector3i(state.buildings,state.renewals,int(skyline_monument_opens>=0 and state.tick>=skyline_monument_opens))
+
+func _compose_skyline(enter:bool) -> void:
 	var bounds:Vector4=state.bounds
 	var x:=lerpf(bounds.x,bounds.z,.50)
 	var z:=lerpf(bounds.y,bounds.w,.46)
 	orbit.following=false
 	orbit.pivot=Vector3(x,model.height_at(x,z)+6.,z)
-	orbit.elevation=.145
-	orbit.extent=clampf((bounds.z-bounds.x)*.48,62.,210.)
+	if enter: orbit.elevation=.075
+	orbit.extent=clampf((bounds.z-bounds.x)*.52,96.,225.)
 	var solar:Vector3=weather.sun
-	orbit.azimuth=atan2(solar.x,solar.z)+.86
+	if enter: orbit.azimuth=atan2(solar.x,solar.z)+.86
 	var districts:Dictionary={}
 	for lot:Dictionary in town.lots:
 		if lot.floors<4: continue
@@ -445,7 +473,16 @@ func _skyline() -> void:
 		if weight>densest:
 			densest=weight
 			orbit.pivot=focus
-	if densest>0.: orbit.extent=clampf(orbit.extent,75.,142.)
+	var town_scale:=smoothstep(2500.,10500.,state.population)
+	if densest>0.:
+		orbit.extent=clampf(orbit.extent,lerpf(68.,100.,town_scale),lerpf(76.,164.,town_scale))
+	# Keep the first commercial corner in the composition while the town is small.
+	if state.population<12000:
+		for lot in town.lots:
+			if lot.main_street_corner:
+				var influence:=1.-smoothstep(6000.,12000.,state.population)
+				orbit.pivot=orbit.pivot.lerp(lot.pos+Vector3.UP*lot.floors*1.65,.72*influence)
+				break
 	var framed_monument:=false
 	for site in town.greens:
 		if site.data.kind<6 or state.tick<site.data.opens: continue
@@ -458,7 +495,7 @@ func _skyline() -> void:
 		orbit.pivot=Vector3(blend.x,base.y+height*.41,blend.z)
 		orbit.extent=maxf(height*1.34,orbit.skyline_extent(orbit.pivot,base+Vector3.UP*height,bounds))
 		break
-	orbit.azimuth=_skyline_azimuth(orbit.azimuth)
+	if enter: orbit.azimuth=_skyline_azimuth(orbit.azimuth)
 	if not framed_monument and densest>0.:
 		# Reserve headroom for every occupied tower in the central neighbourhood.
 		var sight:=Vector3(sin(orbit.azimuth)*cos(orbit.elevation),sin(orbit.elevation),cos(orbit.azimuth)*cos(orbit.elevation))
@@ -474,6 +511,10 @@ func _skyline() -> void:
 	if lift>0.:
 		orbit.pivot.y+=lift
 		orbit.update_view()
+
+	skyline_revision=_skyline_revision()
+	skyline_target=orbit.pivot
+	skyline_size=orbit.extent
 
 # A tower across the river makes a skyline. A tower against the lens hides it.
 # Test only the foreground of each possible view when the observer presses W.
