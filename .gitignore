@@ -1,0 +1,7 @@
+.tools/
+build*/
+dist/
+vendor/godot-cpp/
+game/.godot/
+game/bin/*.dylib
+.DS_Store
