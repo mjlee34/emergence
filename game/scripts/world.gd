@@ -122,8 +122,8 @@ func _ready() -> void:
 	if capture_path!="": speed=0
 	state=model.summary()
 	orbit.frame_city(state.bounds,1.)
-	if street_capture or (not atlas and not capture_detail and capture_path==""): _district_view(capture_district)
 	_sync()
+	if street_capture or (not atlas and not capture_detail and capture_path==""): _district_view(capture_district)
 	if capture_counter>=0 and not model.business(capture_counter).is_empty():
 		business_id=capture_counter
 		_view_business()
@@ -184,6 +184,7 @@ func _sync() -> void:
 	for id in town.greens.size():
 		var site=town.greens[id]
 		if site.data.kind>=6 and site.fittings.visible:
+			if site.data.model=="clock": site.set_clock(state.minute)
 			orbit.landmark_peak=site.position+Vector3.UP*site.visible_monument_height
 		if site.data.kind in [3,4,5] and (site.on_call or calls.has(id)):
 			site.move_responder(calls.get(id,{}),state.tick+remainder)
@@ -383,14 +384,21 @@ func _visit_green(id:=-1) -> void:
 	var green:Dictionary=town.greens[id].data
 	orbit.following=false
 	orbit.extent=green.radius*2.9
-	orbit.elevation=.39 if green.kind>=6 else .60
+	orbit.elevation=.16 if green.kind>=6 else .60
 	if green.kind>=6:
 		var height:float=town.greens[id].monument_height
 		orbit.extent=maxf(orbit.extent,height*1.34)
 		orbit.pivot=green.pos+Vector3.UP*height*.48
 	else:
 		orbit.pivot=green.pos+Vector3.UP*([.85,.85,2.8,4.3,2.9,3.][green.kind] as float)
-	orbit.azimuth=_clear_angle(orbit.pivot,green.yaw+PI+.38,Vector3.RIGHT*3.)
+	var bearing:float=green.yaw+PI+.38
+	if green.kind>=6:
+		var center:=Vector2((state.bounds.x+state.bounds.z)*.5,(state.bounds.y+state.bounds.w)*.5)
+		var outward:=Vector2(green.pos.x,green.pos.z)-center
+		bearing=atan2(outward.x,outward.y)
+		if green.model in ["liberty","arch"]:
+			bearing=green.yaw+town.greens[id].monument.rotation.y+PI+.24
+	orbit.azimuth=_clear_angle(orbit.pivot,bearing,Vector3.RIGHT*3.)
 	orbit.update_view()
 
 func _pick_green(screen:Vector2) -> int:
@@ -416,7 +424,28 @@ func _skyline() -> void:
 	orbit.elevation=.145
 	orbit.extent=clampf((bounds.z-bounds.x)*.48,62.,210.)
 	var solar:Vector3=weather.sun
-	orbit.azimuth=atan2(-solar.x,-solar.z)+.10
+	orbit.azimuth=atan2(solar.x,solar.z)+.86
+	var districts:Dictionary={}
+	for lot:Dictionary in town.lots:
+		if lot.floors<4: continue
+		var key:=Vector2i(floori(lot.pos.x/96.),floori(lot.pos.z/96.))
+		var mass:Vector4=districts.get(key,Vector4.ZERO)
+		var weight:float=lot.floors
+		districts[key]=mass+Vector4(lot.pos.x,lot.pos.y+lot.floors*1.35,lot.pos.z,1.)*weight
+	var densest:=0.
+	var founding:Vector3=town.lots[0].pos if not town.lots.is_empty() else Vector3.ZERO
+	for cell:Vector2i in districts:
+		var mass:Vector4=districts[cell]
+		var focus:=Vector3(mass.x,mass.y,mass.z)/mass.w
+		var weight:=mass.w
+		for neighbour:Vector2i in [Vector2i.LEFT,Vector2i.RIGHT,Vector2i.UP,Vector2i.DOWN]:
+			var surround:Vector4=districts.get(cell+neighbour,Vector4.ZERO)
+			weight+=surround.w*.35
+		weight/=1.+focus.distance_to(founding)/260.
+		if weight>densest:
+			densest=weight
+			orbit.pivot=focus
+	if densest>0.: orbit.extent=clampf(orbit.extent,75.,142.)
 	for site in town.greens:
 		if site.data.kind<6 or state.tick<site.data.opens: continue
 		# Frame the monument with the urban area on either side of it.
@@ -427,11 +456,36 @@ func _skyline() -> void:
 		orbit.pivot=Vector3(blend.x,base.y+height*.41,blend.z)
 		orbit.extent=maxf(height*1.34,orbit.skyline_extent(orbit.pivot,base+Vector3.UP*height,bounds))
 		break
+	orbit.azimuth=_skyline_azimuth(orbit.azimuth)
 	orbit.update_view()
 	var lift:float=model.height_at(orbit.position.x,orbit.position.z)+4.-orbit.position.y
 	if lift>0.:
 		orbit.pivot.y+=lift
 		orbit.update_view()
+
+# A tower across the river makes a skyline. A tower against the lens hides it.
+# Test only the foreground of each possible view when the observer presses W.
+func _skyline_azimuth(preferred:float) -> float:
+	var reach:float=orbit.extent*.5/tan(deg_to_rad(orbit.fov)*.5)
+	var best:=INF
+	var chosen:=preferred
+	for offset:float in [0.,.44,-.44,.92,-.92,1.5,-1.5,2.2,-2.2,PI]:
+		var bearing:=preferred+offset
+		var direction:=Vector2(sin(bearing),cos(bearing))
+		var eye:=Vector2(orbit.pivot.x,orbit.pivot.z)+direction*reach*cos(orbit.elevation)
+		var score:=absf(offset)*.35
+		var eye_y:float=orbit.pivot.y+reach*sin(orbit.elevation)
+		for site in town.sites:
+			var delta:=eye-Vector2(site.position.x,site.position.z)
+			var depth:=delta.dot(direction)
+			if depth< -6. or depth>reach*.55: continue
+			if absf(delta.cross(direction))>7.+maxf(0.,depth)*.42: continue
+			var obstruction:=site.position.y+site.get_aabb().end.y-(eye_y-depth*tan(orbit.elevation))
+			score+=clampf((obstruction+10.)/16.,0.,2.)*(1.-maxf(0.,depth)/reach)
+		if score<best:
+			best=score
+			chosen=bearing
+	return chosen
 
 func _street_view() -> void:
 	_district_view(1)
@@ -455,8 +509,8 @@ func _district_view(use:int) -> void:
 			orbit.pivot=stop+Vector3.UP*1.4
 	orbit.following=false
 	orbit.extent=36
-	orbit.azimuth=-.37
-	orbit.elevation=.64
+	orbit.elevation=.54
+	orbit.azimuth=_clear_angle(orbit.pivot,-.37,Vector3.RIGHT*2.) if not town.sites.is_empty() else -.37
 	orbit.update_view()
 
 func _clear_angle(pivot:Vector3,preferred:float,half_length:Vector3) -> float:

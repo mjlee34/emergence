@@ -399,7 +399,7 @@ void City::advance(int ticks) {
       if (facilities_[f].opens == tick_) {
         life_.open_facility(*this, int(f));
         service_opened |= is_service(facilities_[f].kind);
-        record(std::string(facility_name(facilities_[f].kind)) + " opened");
+        record(std::string(facility_name(seed_, facilities_[f])) + " opened");
       }
     if (service_opened) plan_public_sites(false);
     dispatch_services();

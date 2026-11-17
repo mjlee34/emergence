@@ -14,6 +14,10 @@ uniform sampler2D meadow_surface : filter_linear_mipmap_anisotropic, repeat_enab
 instance uniform vec4 workfront = vec4(0.,0.,0.,2.);
 instance uniform float built_height = 10000.;
 instance uniform float occupancy = 0.0;
+uniform sampler2D limestone : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D brickfront : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D curtainwall : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D bronze : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform float night = 0.0;
 uniform float wetness = 0.;
 uniform float rain = 0.;
@@ -52,6 +56,9 @@ void fragment(){
 		vec3 grass=texture(meadow,at).rgb;
 		float variation=texture(meadow,UV*.037).g;
 		base=grass*(.63+variation*1.4)*(.55+COLOR.rgb*1.2);
+		base=mix(base,vec3(dot(base,vec3(.23,.61,.16))),.29)*vec3(.88,.95,.97);
+		float incline=1.-abs((INV_VIEW_MATRIX*vec4(NORMAL,0.)).y);
+		base=mix(base,COLOR.rgb*.56,smoothstep(.19,.59,incline)*.57);
 		detail=texture(meadow_surface,at).rgb;
 	}else if(kind==6){
 		vec2 pane=UV/vec2(1.38,2.25);
@@ -59,12 +66,34 @@ void fragment(){
 		vec2 seam=min(fract(pane),1.-fract(pane))/max(fwidth(pane),vec2(.0001));
 		float frame=smoothstep(.1,1.5,min(seam.x,seam.y));
 		float blind=smoothstep(.63,.65,id)*step(fract(pane.y),id*.65);
-		base=mix(vec3(.057,.066,.069),mix(vec3(.025,.048,.057),vec3(.12,.165,.18),id),frame);
+		base=mix(vec3(.044,.052,.055),base*(.65+.55*id),frame);
 		base=mix(base,vec3(.26,.24,.209),blind*.68*frame);
 		EMISSION=vec3(.88,.56,.28)*step(.89-min(.59,occupancy*.075),id)*frame*night*step(.5,occupancy);
 		detail.b=.18+.11*id;
 		spec=.72;
 		METALLIC=.32;
+	}else if(kind>=11 && kind<=14){
+		// Each facade tile spans four storeys. Mipmaps retain its average tone
+		// in long views while individual panes pick up the sky at street level.
+		float storey=kind>=13 ? 3.55 : 3.05;
+		vec2 at=UV/vec2(kind>=13 ? 9.6 : 8.8,4.*storey);
+		vec3 wall;
+		if(kind==11) wall=texture(limestone,at).rgb;
+		else if(kind==12) wall=texture(brickfront,at).rgb;
+		else if(kind==13) wall=texture(curtainwall,at).rgb;
+		else wall=texture(bronze,at).rgb;
+		vec2 bay=fract(at*4.);
+		vec2 edge=min(bay,1.-bay);
+		float inset=kind>=13 ? .06 : .16;
+		float pane=smoothstep(inset,inset+.06,edge.x)*smoothstep(.12,.21,edge.y);
+		float metal=kind>=13 ? .46 : .16;
+		base=wall*COLOR.rgb;
+		detail.b=mix(.82,.21+.12*clouds,pane);
+		METALLIC=pane*metal;
+		spec=mix(.25,.78,pane);
+		float occupied=step(.5,occupancy)*step(.94-min(.49,occupancy*.018),hash(floor(at*4.)+building_key));
+		float curtain=clamp(dot(wall,vec3(.25,.55,.2))*4.+.10,.18,1.);
+		EMISSION=vec3(.80,.56,.31)*occupied*night*pane*curtain*.95;
 	}else if(kind==10){
 		EMISSION=vec3(1.,.78,.49)*night*2.8;
 	}else if(kind==7){

@@ -418,6 +418,12 @@ public:
                        0)
                           ? -1
                           : 1;
+    const auto &a = state.nodes()[r.a], &end = state.nodes()[r.b];
+    Vector2i block(std::min(a.col, end.col), std::min(a.row, end.row));
+    int bank = d["front_sign"];
+    if (a.row == end.row && (end.col - a.col) * bank > 0) --block.y;
+    if (a.col == end.col && (end.row - a.row) * bank < 0) --block.x;
+    d["block"] = block;
     const auto &places = state.life().occupancies();
     if (index < int(places.size())) {
       d["jobs"] = places[index].jobs;
@@ -434,7 +440,13 @@ public:
     ERR_FAIL_INDEX_V(id, int(state.facilities().size()), d);
     const auto &f = state.facilities()[id];
     d["kind"] = int(f.kind);
-    d["name"] = city::facility_name(f.kind);
+    d["name"] = city::facility_name(state.seed(), f);
+    if (city::is_landmark(f.kind)) {
+      auto design = city::landmark_design(state.seed(), f);
+      d["model"] = design.model;
+      d["height_scale"] = design.height_scale;
+      d["palette"] = design.palette;
+    }
     d["catchment"] = f.catchment;
     d["responses"] = f.responses;
     d["pos"] = surface(f.center);

@@ -195,17 +195,6 @@ void City::plan_facilities() {
     }
   }
 }
-const char *facility_name(FacilityKind kind) {
-  constexpr const char *names[] = {"Neighbourhood park",
-                                   "Neighbourhood playground",
-                                   "Community school",
-                                   "District hospital",
-                                   "Fire station",
-                                   "Police station",
-                                   "Grand observation tower",
-                                   "Beacon of Liberty"};
-  return names[int(kind)];
-}
 namespace {
 struct ServicePlan {
   FacilityKind kind;
@@ -291,16 +280,46 @@ double landmark_setting(const City &city, Facility &f, bool prefer_water) {
         (s.kind == FacilityKind::Park || is_service(s.kind)))
       civic_square = true;
   if (wet >= 2 && (prefer_water || vista == 0. || !civic_square)) {
-    f.kind = FacilityKind::Statue;
+    f.kind = FacilityKind::WaterfrontMonument;
     return 2. + wet * .4;
   }
   if (vista > 0. && civic_square) {
-    f.kind = FacilityKind::Tower;
+    f.kind = FacilityKind::BoulevardMonument;
     return 2. + 3. * vista;
   }
   return 0.;
 }
 } // namespace
+
+LandmarkDesign landmark_design(uint32_t seed, const Facility &site) {
+  // A design draw belongs to a surveyed plot. It never consumes a city
+  // random draw or changes the order in which streets and homes are planned.
+  struct Design { const char *model, *name; };
+  constexpr Design boulevard[] = {{"lattice", "Grand observation tower"},
+                                  {"clock", "Meridian clock tower"},
+                                  {"orbit", "Celestial observatory"}};
+  constexpr Design waterfront[] = {{"liberty", "Beacon of Liberty"},
+                                   {"arch", "Tidal gateway"},
+                                   {"lantern", "Mariners' light"}};
+  uint32_t parcel = uint32_t(site.frontage) * 32u + site.sample * 2u + (site.side > 0);
+  uint32_t style = mix_seed(seed ^ mix_seed(parcel) ^ 0xb35c829du);
+  // Promenades also host civic clocks and observatories. A landlocked
+  // boulevard can never be assigned a maritime beacon.
+  bool shore = site.kind == FacilityKind::WaterfrontMonument;
+  const auto &design = shore && ((style >> 4) % 4 == 0)
+      ? boulevard[1 + ((style >> 12) & 1)]
+      : (shore ? waterfront : boulevard)[style % 3];
+  return {design.model, design.name, .98 + ((style >> 8) % 19) * .01,
+          int((style >> 20) % 4)};
+}
+
+const char *facility_name(uint32_t seed, const Facility &site) {
+  if (is_landmark(site.kind))
+    return landmark_design(seed, site).name;
+  constexpr const char *names[] = {"Neighbourhood park", "Neighbourhood playground",
+      "Community school", "District hospital", "Fire station", "Police station"};
+  return names[int(site.kind)];
+}
 
 void City::plan_public_sites(bool allow_building) {
   std::vector<int> pupils(buildings_.size());
@@ -389,7 +408,7 @@ void City::plan_public_sites(bool allow_building) {
     }
     if (highest > 0.) {
       facilities_.push_back(best);
-      record(std::string(facility_name(best.kind)) + " construction began");
+      record(std::string(facility_name(seed_, best)) + " construction began");
     }
   }
   const uint32_t draw = mix_seed(seed_);
@@ -410,12 +429,12 @@ void City::plan_public_sites(bool allow_building) {
         for (double setback : {36., 44., 52., 60.}) {
           // Survey the full forecourt before committing the monument. The
           // perimeter also reserves a promenade outside its foundations.
-          auto f = roadside_site(*this, FacilityKind::Tower, e, k, side, 29.,
+          auto f = roadside_site(*this, FacilityKind::BoulevardMonument, e, k, side, 29.,
                                  setback, 5760);
           if (suitability(*this, f, 1.) <= 0.) continue;
           double setting = landmark_setting(*this, f, (draw >> 8) & 1);
           if (setting <= 0.) continue;
-          if (f.kind == FacilityKind::Tower)
+          if (f.kind == FacilityKind::BoulevardMonument)
             f = roadside_site(*this, f.kind, e, k, side, 34., setback, 5760);
           double score = suitability(*this,f,1.) * setting * std::log1p(frontage_visits(e));
           if (score > highest) {
@@ -426,7 +445,7 @@ void City::plan_public_sites(bool allow_building) {
   }
   if (highest > 0.) {
     facilities_.push_back(best);
-    record(std::string(facility_name(best.kind)) + " construction began");
+    record(std::string(facility_name(seed_, best)) + " construction began");
   }
 }
 

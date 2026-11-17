@@ -4,13 +4,15 @@ Choose a point on Earth and descend from the map to a new settlement on its meas
 
 The original Alder Reach fixture opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
 
-![Street and regional views of Alder Reach before and after the material and lighting update](captures/visual-comparison.jpg)
+![The occupied skyline of Alder Reach in the late afternoon](captures/skyline-evening.jpg)
 
 [Watch a street, a bridge and an eight-storey redevelopment under construction](captures/construction.mp4) · [Construction stages](captures/construction-stages.jpg)
 
 [Watch sunset, rainfall and sunrise in the city](captures/city-weather.mp4) · [Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
 
 [Watch a new playground take shape and children use the slide](captures/neighbourhood-parks.mp4) · [Watch the morning bus and a resident’s drive to work](captures/bus-commute.mp4) · [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
+
+The same 110,745-resident district before and after the architecture update is shown at the same instant from the same camera. Residential and office buildings use separate masonry and curtain-wall facades with setback terraces, chamfered corners and different roof profiles. Near and distant meshes share those silhouettes. [Compare the two renders](captures/skyline-architecture.jpg)
 
 ## Play on Apple Silicon
 
@@ -106,7 +108,7 @@ Every two simulation days the city surveys neighbourhoods without road access to
 
 Children within walking distance can attend a weekday two-hour class that fits around their other trips. Each hospital, fire station and police station operates one vehicle. For a simulated call at an occupied building, the available station with the fastest road route sends its vehicle to the scene and back. Calls are simulated service requests. Disease, fire spread and crime outcomes are outside this slice.
 
-One in five seeds qualifies for a landmark. After 24 days and 12,000 residents, the planner looks for a well-used street with an open view across water, or a major street axis near a civic space. An eligible city may grow without finding a site. A city can build one monument. The Beacon of Liberty rises 94 metres above its foundation on the waterfront. The 159-metre lattice observation tower terminates a boulevard view. Their plazas reserve radii of 29 and 34 metres respectively before construction. Use **W** for the skyline or **Places** for a closer view. [Same-city skyline comparison](captures/landmark-skyline.jpg) · [Earlier civic prototypes](captures/civic-places.jpg)
+One in five seeds qualifies for a landmark. After 24 days and 12,000 residents, the planner looks for a well-used street with an open view across water, or a major street axis near a civic space. An eligible city may grow without finding a site. A city can build one monument. Waterfront plots can receive the Beacon of Liberty, the Tidal gateway or Mariners’ light. A civic clock or an orbital observatory can rise on a promenade or a boulevard, while the lattice observation tower anchors a boulevard vista. The seed and surveyed parcel determine the design, material palette and height. Waterfront plazas reserve a 29 m radius and boulevard sites reserve 34 m. The four clock faces show local simulation time. [Six monuments built in six different cities](captures/landmark-families.jpg). Use **W** for the skyline or **Places** for a closer view. [Same-city skyline comparison](captures/landmark-skyline.jpg) · [Earlier civic prototypes](captures/civic-places.jpg)
 
 ### Local trade
 

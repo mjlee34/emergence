@@ -40,12 +40,11 @@ struct Building {
   int frontage, floors;
   int previous_floors = 0;
 };
-enum class FacilityKind { Park, Playground, School, Hospital, Fire, Police, Tower, Statue };
-const char *facility_name(FacilityKind kind);
+enum class FacilityKind { Park, Playground, School, Hospital, Fire, Police, BoulevardMonument, WaterfrontMonument };
 inline bool is_service(FacilityKind k) {
   return k >= FacilityKind::School && k <= FacilityKind::Police;
 }
-inline bool is_landmark(FacilityKind k) { return k >= FacilityKind::Tower; }
+inline bool is_landmark(FacilityKind k) { return k >= FacilityKind::BoulevardMonument; }
 struct Facility {
   FacilityKind kind;
   Point center, gate;
@@ -53,6 +52,14 @@ struct Facility {
   int frontage, sample, side, started, opens;
   int catchment = 0, responses = 0;
 };
+struct LandmarkDesign {
+  const char *model, *name;
+  double height_scale;
+  int palette;
+};
+LandmarkDesign landmark_design(uint32_t seed, const Facility &site);
+const char *facility_name(uint32_t seed, const Facility &site);
+
 struct Response {
   int station, lot, start, arrival, leaving, end;
   std::vector<DriveLeg> outward, returning;

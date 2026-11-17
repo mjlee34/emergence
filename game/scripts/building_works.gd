@@ -1,4 +1,5 @@
 extends Node3D
+const Architecture=preload("res://scripts/urban_architecture.gd")
 const Forms=preload("res://scripts/forms.gd")
 const STEEL=Color("#747b77")
 const CONCRETE=Color("#aaa998")
@@ -29,7 +30,10 @@ func setup(lot:Dictionary,finished:MeshInstance3D,previous:MeshInstance3D) -> vo
 	var w:=7.2+int(lot.style%4)*.62
 	var d:=5.8+int(lot.style%5)*.47
 	var floors:int=lot.floors if lot.use!=2 else 1
-	deck_height=4.3 if lot.use==2 else floors*(2.8 if floors>=4 else 2.65)
+	var floor_height:=2.65
+	if floors>=4: floor_height=Architecture.storey(lot)
+	elif Architecture.masonry_house(lot): floor_height=3.05
+	deck_height=4.3 if lot.use==2 else floors*floor_height
 	var frame_forms=Forms.new(true)
 	frame_forms.box(Vector3(0,.17,0),Vector3(w+.30,.29,d+.30),CONCRETE)
 	for floor_id in floors:

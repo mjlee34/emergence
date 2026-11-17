@@ -1,9 +1,10 @@
 extends RefCounted
 ## Procedural geometry with metre-scaled surface coordinates. Winding is selected from the requested outward direction.
 var surface := SurfaceTool.new()
-enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP }
+enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP, LIMESTONE_FRONT, BRICK_FRONT, CURTAIN_WALL, BRONZE_FRONT }
 var finish:=Finish.PLAIN
 var construction_lag:=0.0
+var facade_uv:=Vector3.ZERO
 var detailed:bool
 var material:Material
 static var built_material:ShaderMaterial
@@ -19,6 +20,8 @@ func _init(with_surfaces:=false) -> void:
 			for key in ["road","walk","brick","slate","meadow"]:
 				built_material.set_shader_parameter(key,load("res://art/"+key+".jpg"))
 				built_material.set_shader_parameter(key+"_surface",load("res://art/"+key+"_surface.png"))
+			for key in ["limestone","brickfront","curtainwall","bronze"]:
+				built_material.set_shader_parameter(key,load("res://art/"+key+".jpg"))
 		material=built_material
 	else:
 		if not plain_material:
@@ -47,7 +50,10 @@ func triangle(a: Vector3, b: Vector3, c: Vector3, color: Color, outward: Vector3
 		surface.set_tangent(Plane(tangent,sign_v))
 		surface.set_uv2(Vector2(finish,construction_lag))
 		for p:Vector3 in [a,b,c]:
-			surface.set_uv(Vector2(p.dot(axis),p.z if top else -p.y))
+			if facade_uv!=Vector3.ZERO:
+				surface.set_uv(Vector2(p.x*facade_uv.x+p.z*facade_uv.y+facade_uv.z,-p.y))
+			else:
+				surface.set_uv(Vector2(p.dot(axis),p.z if top else -p.y))
 			surface.add_vertex(p)
 	else:
 		for p in [a,b,c]: surface.add_vertex(p)

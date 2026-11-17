@@ -11,7 +11,8 @@ func check(ok:bool,message:String) -> void:
 		push_error(message)
 
 func run() -> void:
-	for scenario in [[0,283500,7,90.],[13,272000,6,150.]]:
+	for scenario in [[0,191480,"orbit",140.],[12,329720,"liberty",94.],[13,272120,"lattice",154.],
+			[29,203000,"lantern",90.],[31,272120,"arch",94.],[120,168440,"clock",104.]]:
 		var world=load("res://main.tscn").instantiate()
 		world.model=CityModel.new()
 		world.model.reset(scenario[0])
@@ -21,13 +22,21 @@ func run() -> void:
 		var found:=false
 		for id in world.town.greens.size():
 			var site=world.town.greens[id]
-			if site.data.kind!=scenario[2]: continue
+			if site.data.get("model","")!=scenario[2]: continue
 			found=true
 			var mesh:MeshInstance3D=site.monument
 			var size_m:=mesh.get_aabb().size*mesh.scale
 			check(size_m.y>=scenario[3],"Landmark height fell below skyline scale")
 			check(Vector2(size_m.x,size_m.z).length()*.5<site.data.radius,"Footings exceed reserved grounds")
 			var top:Vector3=site.position+Vector3.UP*site.monument_height
+			site.advance(lerpf(site.data.started,site.data.opens,.55))
+			check(site.visible_monument_height>0 and site.visible_monument_height<site.monument_height,"Construction lost its progressive silhouette")
+			site.advance(site.data.opens)
+			if site.data.model=="clock":
+				site.set_clock(720)
+				var noon:float=site.clock_hands[1].rotation.z
+				site.set_clock(735)
+				check(absf(angle_difference(noon,site.clock_hands[1].rotation.z)+PI*.5)<.002,"Clock hands failed to show city time")
 			world._visit_green(id)
 			check(world.orbit.is_position_in_frustum(top) and world.orbit.is_position_in_frustum(site.position),"Places view cropped the landmark")
 			world._skyline()

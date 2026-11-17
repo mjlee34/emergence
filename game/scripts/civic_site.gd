@@ -2,14 +2,15 @@ extends "res://scripts/green_space.gd"
 
 const LIMESTONE:=Color("#c8c0ae")
 const GLASS:=Color("#526c75")
-const IRON:=Color("#605750")
-const COPPER:=Color("#79a398")
+const Landmark=preload("res://scripts/landmark.gd")
 const BRICK:=Color("#b17d63")
 const BLUE:=Color("#526b84")
 
 var monument_height:=0.
 var visible_monument_height:=0.
 var monument:MeshInstance3D
+var clock_hands:Array[MeshInstance3D]=[]
+var clock_minute:=-1
 
 func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 	model=sim
@@ -54,8 +55,7 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 		3: _hospital(g)
 		4: _fire_station(g)
 		5: _police_station(g)
-		6: _tower(g)
-		7: _statue(g)
+		6,7: Landmark.build(g,data)
 	if data.kind<=5:
 		for side in [-1.,1.]:
 			var x:float=side*(r*.64)
@@ -66,25 +66,48 @@ func setup(sim,land,site:Dictionary,canopy:Mesh) -> void:
 	structure.position.y=_p(0,0).y
 	if data.kind>=6:
 		monument=structure
-		structure.scale=Vector3(3.4,4.6,3.4) if data.kind==6 else Vector3.ONE*6.6
-	# Face the torch towards water where the terrain survey found it.
+		if data.model=="lattice": structure.scale=Vector3(3.4,4.6,3.4)
+		elif data.model=="liberty": structure.scale=Vector3.ONE*6.6
+		structure.scale.y*=data.height_scale
+	# Orient the waterfront facade toward the same open water used in the survey.
 	if data.kind==7:
 		var shore:=Vector2.ZERO
 		for i in 12:
 			var a:=i*TAU/12.
 			var dir:=Vector2(sin(a),cos(a))
-			var p:=Vector2(position.x,position.z)+dir*32.
+			var p:=Vector2(position.x,position.z)+dir*46.
 			if model.inland_water(p.x,p.y) or model.height_at(p.x,p.y)<=model.sea_level():
 				shore+=dir
 		if shore.length()>.1: structure.rotation.y=atan2(-shore.x,-shore.y)-rotation.y
 	if monument: _seat_monument()
+	if data.get("model","")=="clock": _make_hands()
 	if data.kind in [3,4,5]: _vehicle()
 	if data.kind<=5:
 		_tree(canopy,-r*.76,r*.39,.82)
 		_sign(["COMMUNITY SCHOOL","HOSPITAL","FIRE STATION","POLICE"][data.kind-2],Vector3(0,2.67,-3.72))
 	else:
+		_plaza_gardens(canopy)
 		for side in [-1,1]:
 			_bench(side*r*.76,-1.,side*-PI*.5)
+
+# Break up the stone forecourt without closing the promenade used by visitors.
+func _plaza_gardens(canopy:Mesh) -> void:
+	var garden=Forms.new(true)
+	var r:float=data.radius
+	var sectors:=6 if data.model in ["orbit","lantern"] else 4
+	for i in sectors:
+		var middle:=TAU*(i+.5)/sectors
+		var span:=TAU/sectors*.31
+		for j in 10:
+			var a:=middle-span+2.*span*j/10.
+			var b:=middle-span+2.*span*(j+1)/10.
+			garden.finish=Forms.Finish.MEADOW
+			garden.quad(_arc(r*.83,a,.11),_arc(r*.83,b,.11),_arc(r*.88,b,.11),_arc(r*.88,a,.11),Color("#74846a"),Vector3.UP)
+			garden.finish=Forms.Finish.PLAIN
+			garden.beam(_arc(r*.83,a,.12),_arc(r*.83,b,.12),.16,LIMESTONE.darkened(.22))
+		if data.model not in ["liberty","lattice"]:
+			_tree(canopy,sin(middle)*r*.854,-cos(middle)*r*.854,.80)
+	garden.attach(planting)
 
 func advance(time:float) -> void:
 	super.advance(time)
@@ -96,11 +119,13 @@ func advance(time:float) -> void:
 	var local_height:=monument.get_aabb().end.y*built
 	monument.set_instance_shader_parameter("built_height",local_height+.001)
 	visible_monument_height=monument.position.y+local_height*monument.scale.y
+	for hand in clock_hands: hand.visible=local_height>=76.
 
 func _seat_monument() -> void:
 	var feet:Array[Vector2]=[Vector2.ZERO]
-	var width:=5.2*monument.scale.x
-	if data.kind==6:
+	var width:float={"clock":17.5,"orbit":20.,"lantern":18.,"arch":6.0}.get(data.model,5.2*monument.scale.x)
+	if data.model=="arch": feet.assign([Vector2(-18.,0),Vector2(18.,0)])
+	if data.model=="lattice":
 		width=2.05*monument.scale.x
 		feet.clear()
 		for x in [-5.15,5.15]:
@@ -123,6 +148,25 @@ func _seat_monument() -> void:
 	foundation.attach(fittings).rotation.y=monument.rotation.y
 	monument.position.y=top
 	monument_height=top+monument.get_aabb().end.y*monument.scale.y
+
+func _make_hands() -> void:
+	for dial in 4:
+		var face:=Node3D.new()
+		monument.add_child(face)
+		face.rotation.y=dial*PI*.5
+		face.position=Vector3.UP*72.2+Vector3.BACK.rotated(Vector3.UP,face.rotation.y)*7.79
+		for length:float in [1.85,2.95]:
+			var g=Forms.new(true)
+			g.box(Vector3.UP*(length*.43),Vector3(.21,length,.10),Color("#323535"))
+			clock_hands.append(g.attach(face))
+	set_clock(0)
+
+func set_clock(minute:int) -> void:
+	if clock_minute==minute: return
+	clock_minute=minute
+	for i in clock_hands.size():
+		var period:=720. if i%2==0 else 60.
+		clock_hands[i].rotation.z=-TAU*minute/period
 
 func _sign(caption:String,at:Vector3) -> void:
 	var label:=Label3D.new()
@@ -197,79 +241,6 @@ func _police_station(g) -> void:
 	_block(g,Vector3(0,5.98,.15),Vector3(9.2,.43,6.65),BLUE,Forms.Finish.METAL)
 	g.beam(Vector3(2.7,6.0,1.6),Vector3(2.7,9.4,1.6),.10,FRAME)
 	g.beam(Vector3(2.15,8.7,1.6),Vector3(3.25,8.7,1.6),.07,FRAME)
-
-func _tower(g) -> void:
-	var levels:=[Vector2(0.,5.15),Vector2(4.,4.05),Vector2(8.,2.65),Vector2(12.,1.9),Vector2(17.,1.25),Vector2(23.,.77),Vector2(29.,.38)]
-	var corners:=[Vector2(-1,-1),Vector2(1,-1),Vector2(1,1),Vector2(-1,1)]
-	for corner:Vector2 in corners:
-		g.box(Vector3(corner.x*5.15,.34,corner.y*5.15),Vector3(2.05,.68,2.05),LIMESTONE)
-	g.finish=Forms.Finish.METAL
-	for i in levels.size()-1:
-		var lo:Vector2=levels[i]
-		var hi:Vector2=levels[i+1]
-		for j in 4:
-			var a:Vector2=corners[j]
-			var b:Vector2=corners[(j+1)%4]
-			var p:=Vector3(a.x*lo.y,lo.x+.6,a.y*lo.y)
-			var q:=Vector3(b.x*lo.y,lo.x+.6,b.y*lo.y)
-			var u:=Vector3(a.x*hi.y,hi.x+.6,a.y*hi.y)
-			var v:=Vector3(b.x*hi.y,hi.x+.6,b.y*hi.y)
-			g.beam(p,u,.64/(1.+i*.23),IRON)
-			g.beam(u,v,.23/(1.+i*.18),IRON)
-			if i>0:
-				g.beam(p,v,.16/(1.+i*.13),IRON)
-				g.beam(q,u,.16/(1.+i*.13),IRON)
-			else:
-				var prev:=p
-				for seg in range(1,13):
-					var t:=seg/12.
-					var arch:=p.lerp(q,t)+Vector3.UP*5.25*sqrt(maxf(0.,1.-pow(2.*t-1.,2)))
-					g.beam(prev,arch,.26,IRON)
-					prev=arch
-	for deck in [Vector2(8.55,6.4),Vector2(17.5,3.65),Vector2(29.8,1.75)]:
-		g.box(Vector3.UP*deck.x,Vector3(deck.y,.55,deck.y),IRON)
-		# A lit cornice reads as an observation deck across the river at dusk.
-		g.finish=Forms.Finish.LAMP
-		g.box(Vector3.UP*(deck.x+.18),Vector3(deck.y+.05,.075,deck.y+.05),LIMESTONE)
-		g.finish=Forms.Finish.METAL
-		for side in [-1.,1.]:
-			g.box(Vector3(0,deck.x+.54,side*deck.y*.48),Vector3(deck.y,.10,.10),LIMESTONE)
-			g.box(Vector3(side*deck.y*.48,deck.x+.54,0),Vector3(.10,.10,deck.y),LIMESTONE)
-	g.taper(Vector3.UP*30.,.68,.14,2.2,12,IRON)
-	g.taper(Vector3.UP*32.2,.11,.03,2.2,8,IRON)
-	g.finish=Forms.Finish.LAMP
-	g.taper(Vector3.UP*34.4,.11,.04,.24,8,LIMESTONE)
-
-func _statue(g) -> void:
-	for layer in [Vector3(5.2,.6,0),Vector3(4.8,.6,.6),Vector3(4.25,.5,1.2),Vector3(3.7,3.2,1.7),Vector3(4.4,.48,4.9)]:
-		g.box(Vector3.UP*(layer.z+layer.y*.5),Vector3(layer.x,layer.y,layer.x),LIMESTONE)
-	g.finish=Forms.Finish.METAL
-	for side in [-1.,1.]:
-		for bay in [-1.2,-.6,0.,.6,1.2]:
-			g.box(Vector3(bay,3.91,side*1.86),Vector3(.42,.85,.05),Color("#938974"))
-			g.box(Vector3(side*1.86,3.91,bay),Vector3(.05,.85,.42),Color("#938974"))
-	var base:=Vector3.UP*5.38
-	g.profile(base,[Vector3(1.35,0,.94),Vector3(1.18,1.1,.84),Vector3(.75,3.45,.62),Vector3(.98,4.85,.64),Vector3(.40,5.25,.37)],COPPER,16)
-	for i in 12:
-		var a:=TAU*i/12.
-		g.beam(base+Vector3(1.23*cos(a),.20,.88*sin(a)),base+Vector3(.78*cos(a+.63),4.6,.55*sin(a+.63)),.11,Color("#658e82"))
-	g.profile(base+Vector3.UP*5.17,[Vector3(.27,0,.29),Vector3(.48,.25,.46),Vector3(.50,.82,.44),Vector3(.33,1.,.34)],COPPER,14)
-	g.profile(base+Vector3(0,5.47,-.32),[Vector3(.25,0,.17),Vector3(.34,.30,.23),Vector3(.31,.51,.18)],Color("#86ab9b"),12)
-	g.beam(base+Vector3(0,5.89,-.50),base+Vector3(0,5.67,-.62),.11,COPPER)
-	g.taper(base+Vector3.UP*5.97,.56,.46,.20,12,COPPER)
-	for i in 7:
-		var a:=TAU*i/7.
-		g.beam(base+Vector3(.4*cos(a),6.08,.4*sin(a)),base+Vector3(.95*cos(a),6.68,.95*sin(a)),.12,COPPER)
-	g.beam(base+Vector3(-.82,4.76,0),base+Vector3(-1.17,5.88,-.12),.54,COPPER)
-	g.beam(base+Vector3(-1.17,5.88,-.12),base+Vector3(-1.23,7.14,-.14),.34,COPPER)
-	var hand:=base+Vector3(-1.23,7.08,-.14)
-	g.taper(hand,.18,.22,.66,10,IRON)
-	g.taper(hand+Vector3.UP*.63,.20,.49,.31,10,COPPER)
-	g.finish=Forms.Finish.LAMP
-	g.taper(hand+Vector3.UP*.94,.32,.04,.87,9,Color("#d1ab64"))
-	g.finish=Forms.Finish.METAL
-	g.beam(base+Vector3(.83,4.82,0),base+Vector3(1.15,3.92,-.25),.48,COPPER)
-	g.box(base+Vector3(.86,4.18,-.46),Vector3(.78,1.31,.27),Color("#68897d"))
 
 var vehicle:MeshInstance3D
 var beacons:Node3D

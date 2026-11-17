@@ -14,6 +14,17 @@ EMERGENCE generates its buildings, vehicles, street geometry and residents in Go
 
 The material images were colour-graded. The companion maps store tangent-space normal X/Y in red/green and roughness in blue. The two foliage atlases were rendered from the original meshes at three elevations and two azimuths, then instanced across the valley.
 
+## Building facades
+
+The four 512-pixel repeating facade textures in `game/art/` (`limestone.jpg`, `brickfront.jpg`, `curtainwall.jpg` and `bronze.jpg`) use an original atlas generated with the built-in ImageGen tool. Each quadrant depicts four storeys of limestone, brick, silver curtain wall or bronze framing. Geometry, material response, construction masking and occupied windows are rendered in Godot.
+
+<details>
+<summary>ImageGen production prompt</summary>
+
+Create one square production architectural texture atlas with four equally sized square quadrants, abutting exactly at 50% both axes. Full bleed photoreal orthographic flat scans of repeatable upper-floor building facades, evenly lit overcast daylight, straight verticals/horizontals. Each quadrant shows precisely FOUR whole stories and FOUR bays across, arranged to repeat on all boundaries. Top-left: refined warm-gray limestone mid-rise, deep punched windows with dark steel French frames and pale stone lintels. Top-right: finely ribbed umber brick apartment block, recessed windows, occasional half-open blinds, slim iron Juliet railings. Bottom-left: silver-blue glass curtainwall, neutral nickel mullions and subtle steel spandrels, nuanced sky reflection. Bottom-right: smoked bronze modern office facade, closely spaced vertical bronze fins and broad dark window modules. Natural restrained material colors, soft ambient occlusion at sills, realistic physical window detail. Each image fills its quadrant to the edges without margins. No text, labels, perspective, sky background, ground, roofs, entrances or neighboring buildings.
+
+</details>
+
 ## World atlas and terrain
 
 The world atlas uses Natural Earth II with shaded relief and water at 1:50 million, projected into Web Mercator. Boundaries, populated places and lake outlines come from Natural Earth. The project distributes these data in the public domain. [Natural Earth downloads](https://www.naturalearthdata.com/downloads/)

@@ -1,9 +1,10 @@
 extends Node3D
 const Forms = preload("res://scripts/forms.gd")
+const Architecture=preload("res://scripts/urban_architecture.gd")
 const Roadworks=preload("res://scripts/roadworks.gd")
 const BuildingWorks=preload("res://scripts/building_works.gd")
-const WALLS = ["#c6bdaa","#bda991","#b88874","#abb1a7","#c2af95","#a9aca2"]
-const ROOFS = ["#a17a66","#5b6770","#94705e","#777169","#ad8675","#52615f"]
+const WALLS = ["#bcb9b2","#a79d91","#968778","#b2b3af","#c1c0b9","#969b9a"]
+const ROOFS = ["#655a53","#485157","#6b615a","#606267","#736960","#545b5e"]
 var model
 var land
 var market_lot:=-1
@@ -19,6 +20,7 @@ var horizontal:Dictionary={}
 var vertical:Dictionary={}
 var enclosed:Dictionary={}
 var paved:Dictionary={}
+var dense_blocks:Dictionary={}
 var last_paving_population:=0
 var car_meshes: Array[Mesh]=[]
 var construction:Dictionary={}
@@ -96,8 +98,6 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 			work.queue_free()
 			roadworks.erase(id)
 			opened=true
-	if state.population>=3200 and (opened or state.population-last_paving_population>=150):
-		_pave_blocks(state.population,time,initial)
 	for court in court_works.keys():
 		var c:Dictionary=court_works[court]
 		var p:=clampf((time-c.start)/360.,0,1)
@@ -114,6 +114,8 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 	while buildings<state.buildings:
 		_present_lot(buildings,state,time,false)
 		buildings+=1
+	if state.population>=3200 and (opened or state.population-last_paving_population>=150):
+		_pave_blocks(state.population,time,initial)
 	for id in construction.keys():
 		var work=construction[id]
 		if work.advance(time,state.construction_ticks):
@@ -136,6 +138,11 @@ func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	lot.market_hall=id==market_lot
 	if replace: lots[id]=lot
 	else: lots.append(lot)
+	if lot.floors>=6 and not dense_blocks.has(lot.block):
+		dense_blocks[lot.block]=true
+		if paved.has(lot.block):
+			enclosed[lot.block]=true
+			last_paving_population=0
 	land.clear_lot(lot.pos)
 	detail_dirty=true
 	var active:bool=time<lot.started+state.construction_ticks
@@ -199,7 +206,7 @@ func _district_block(lot:Dictionary) -> MeshInstance3D:
 	var w:=7.2+(s%4)*.62
 	var d:=5.8+(s%5)*.47
 	var floors:int=lot.floors
-	var h:=floors*2.8 if floors>=4 else floors*2.65+.48
+	var h:=floors*3.05 if Architecture.masonry_house(lot) else floors*2.65+.48
 	var wall:=Color(WALLS[s%WALLS.size()])
 	var roof:=Color(ROOFS[(s/7)%ROOFS.size()])
 	var g=Forms.new(true)
@@ -207,23 +214,22 @@ func _district_block(lot:Dictionary) -> MeshInstance3D:
 	g.box(Vector3(0,-.13,0),Vector3(w+1.85,.80,d+1.95),Color("#a9a58e"))
 	if lot.use==2:
 		g.finish=Forms.Finish.METAL
-		g.box(Vector3(0,2.15,0),Vector3(w+1.2,4.3,d+.8),Color("#a5aa98"))
+		g.box(Vector3(0,2.15,0),Vector3(w+1.2,4.3,d+.8),Color("#8d9493"))
 		_gable(g,w+1.2,d+.8,4.3,Color("#77807f"),wall,true)
 		g.taper(Vector3(-w*.33,3.8,-d*.22),.58,.42,3.4+s%4,6,Color("#a1775d"))
+	elif floors>=4:
+		Architecture.add(g,lot,w,d,false)
 	else:
-		g.finish=Forms.Finish.PLASTER
-		g.box(Vector3(0,h*.5,0),Vector3(w,h,d),wall)
-		g.finish=Forms.Finish.GLASS
-		if floors>=9:
-			g.box(Vector3(0,(h+4)*.5,0),Vector3(w+.06,h-4.,d+.06),Color("#607979"))
-			g.finish=Forms.Finish.PLAIN
-			for level in range(2,floors,2):
-				g.box(Vector3(0,level*2.8+.35,0),Vector3(w+.12,.24,d+.12),wall)
+		if Architecture.masonry_house(lot):
+			Architecture.house_shell(g,lot,w,d,h)
 		else:
+			g.finish=Forms.Finish.PLASTER
+			g.box(Vector3(0,h*.5,0),Vector3(w,h,d),wall)
+			g.finish=Forms.Finish.GLASS
 			for level in floors:
 				for side in [-1,1]:
 					var y:=1.5+level*2.7
-					g.quad(Vector3(-w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y+.51,side*(d*.5+.04)),Vector3(-w*.41,y+.51,side*(d*.5+.04)),Color("#647876"),Vector3.BACK*side)
+					g.quad(Vector3(-w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y-.51,side*(d*.5+.04)),Vector3(w*.41,y+.51,side*(d*.5+.04)),Vector3(-w*.41,y+.51,side*(d*.5+.04)),Color("#59636a"),Vector3.BACK*side)
 		if lot.use==0 and floors<4:
 			if s%3==1: _hip_roof(g,w,d,h,roof)
 			else: _gable(g,w,d,h,roof,wall)
@@ -231,7 +237,6 @@ func _district_block(lot:Dictionary) -> MeshInstance3D:
 			g.finish=Forms.Finish.FELT
 			g.box(Vector3(0,h+.2,0),Vector3(w+.4,.45,d+.4),roof)
 			g.box(Vector3(-.52,h+.92,0),Vector3(w*.52,1.4,d*.48),Color("#929c95"))
-			if floors>=9 and s%3==0: g.taper(Vector3(-.5,h+1.6,0),.18,.04,3.2,6,wall)
 	var site=g.attach(self)
 	site.position=lot.pos
 	site.rotation.y=lot.yaw
@@ -279,7 +284,8 @@ func _pave_blocks(population:int,time:float,initial:bool) -> void:
 		var center:=top[4].lerp(bottom[4],.5)
 		var radius:=Vector2(center.x+30,center.z-6).length()
 		var industrial:bool=center.x>(116. if model.is_geographic() else model.river_x(center.z)+24) and center.z>0
-		if not industrial and radius>minf(210.,population*.026): continue
+		var urban:bool=dense_blocks.has(cell)
+		if not urban and not industrial and radius>minf(210.,population*.026): continue
 		var left:PackedVector3Array=vertical[cell]
 		var right:PackedVector3Array=vertical[cell+Vector2i.RIGHT]
 		var grid:=PackedVector3Array()
@@ -297,18 +303,22 @@ func _pave_blocks(population:int,time:float,initial:bool) -> void:
 		for j in 8:
 			for i in 8:
 				var k:=j*9+i
-				var planted:=not industrial and (radius>45. or (i in range(2,6) and j in range(2,6)))
+				var planted:=not industrial and ((not urban and radius>45.) or (i in range(3,5) and j in range(2,6)))
 				g.finish=Forms.Finish.MEADOW if planted else Forms.Finish.WALK
 				var tint:=Color("#899a70") if planted else brick
 				g.quad(grid[k],grid[k+1],grid[k+10],grid[k+9],tint,Vector3.UP)
 		var court_mesh=g.attach(self)
+		if paved.has(cell):
+			var prior:MeshInstance3D=paved[cell]
+			court_works.erase(prior)
+			prior.queue_free()
+		paved[cell]=court_mesh
 		if not initial:
 			var axis:=Vector2(bottom[4].x-top[4].x,bottom[4].z-top[4].z)
 			axis/=axis.length_squared()
 			court_works[court_mesh]={"start":time,"plane":Vector4(axis.x,axis.y,-axis.dot(Vector2(top[4].x,top[4].z)),0)}
 		built.append(cell)
 	for cell in built:
-		paved[cell]=true
 		enclosed.erase(cell)
 
 func _street(data:Dictionary,pending:bool,id:int) -> void:
@@ -452,7 +462,7 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 	var floors:int=lot.floors
 	if floors>=4 or use==2:
 		return _urban_block(lot,w,d)
-	var h:=floors*2.65+.48
+	var h:=floors*3.05 if Architecture.masonry_house(lot) else floors*2.65+.48
 	var g=Forms.new(true)
 	var yard_color:=Color("#98a46c") if use==0 else Color("#b4a88f")
 	g.finish=Forms.Finish.MEADOW if use==0 else Forms.Finish.WALK
@@ -460,30 +470,33 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 	var wall:=Color(WALLS[s%WALLS.size()])
 	var roof:=Color(ROOFS[(s/7)%ROOFS.size()])
 	g.box(Vector3(0,-.22,0),Vector3(w+1.1,.94,d+1),Color("#a59b85"))
-	g.finish=Forms.Finish.BRICK if use==1 or s%3==0 else Forms.Finish.PLASTER
-	g.box(Vector3(0,h*.5,0),Vector3(w,h,d),wall)
-	g.finish=Forms.Finish.PLAIN
-	for floor_index in floors:
-		var y:=floor_index*2.65+1.55
-		for side in [-1,1]:
-			for k in range(3):
-				var x:float=(k-1)*w*.30
-				if floor_index==0 and use==1 and side==lot.front_sign: continue
-				if floor_index==0 and k==1:
-					g.box(Vector3(x,.99,side*(d*.5+.055)),Vector3(.92,1.87,.12),Color("#65716b"))
-				else:
+	if Architecture.masonry_house(lot):
+		Architecture.house_shell(g,lot,w,d,h)
+	else:
+		g.finish=Forms.Finish.BRICK if use==1 or s%3==0 else Forms.Finish.PLASTER
+		g.box(Vector3(0,h*.5,0),Vector3(w,h,d),wall)
+		g.finish=Forms.Finish.PLAIN
+		for floor_index in floors:
+			var y:=floor_index*2.65+1.55
+			for side in [-1,1]:
+				for k in range(3):
+					var x:float=(k-1)*w*.30
+					if floor_index==0 and use==1 and side==lot.front_sign: continue
+					if floor_index==0 and k==1:
+						g.box(Vector3(x,.99,side*(d*.5+.055)),Vector3(.92,1.87,.12),Color("#65716b"))
+					else:
+						g.finish=Forms.Finish.GLASS
+						g.box(Vector3(x,y,side*(d*.5+.055)),Vector3(1.03,1.12,.13),Color("#567078"))
+						g.finish=Forms.Finish.PLAIN
+						g.box(Vector3(x,y-.60,side*(d*.5+.1)),Vector3(1.24,.10,.23),Color("#ada99f"))
+						g.box(Vector3(x,y,side*(d*.5+.135)),Vector3(.046,1.17,.04),Color("#a6a49c"))
+						g.box(Vector3(x,y+.18,side*(d*.5+.135)),Vector3(1.10,.055,.04),Color("#a6a49c"))
+				for k in [-1,1]:
 					g.finish=Forms.Finish.GLASS
-					g.box(Vector3(x,y,side*(d*.5+.055)),Vector3(1.03,1.12,.13),Color("#567078"))
+					g.box(Vector3(side*(w*.5+.04),y,k*d*.22),Vector3(.12,1.12,.94),Color("#627b7b"))
 					g.finish=Forms.Finish.PLAIN
-					g.box(Vector3(x,y-.60,side*(d*.5+.1)),Vector3(1.24,.10,.23),Color("#ada99f"))
-					g.box(Vector3(x,y,side*(d*.5+.135)),Vector3(.046,1.17,.04),Color("#a6a49c"))
-					g.box(Vector3(x,y+.18,side*(d*.5+.135)),Vector3(1.10,.055,.04),Color("#a6a49c"))
-			for k in [-1,1]:
-				g.finish=Forms.Finish.GLASS
-				g.box(Vector3(side*(w*.5+.04),y,k*d*.22),Vector3(.12,1.12,.94),Color("#627b7b"))
-				g.finish=Forms.Finish.PLAIN
-				g.box(Vector3(side*(w*.5+.11),y+.13,k*d*.22),Vector3(.05,.047,1.0),Color("#9d9c94"))
-				g.box(Vector3(side*(w*.5+.10),y-.60,k*d*.22),Vector3(.19,.11,1.10),Color("#a19e92"))
+					g.box(Vector3(side*(w*.5+.11),y+.13,k*d*.22),Vector3(.05,.047,1.0),Color("#9d9c94"))
+					g.box(Vector3(side*(w*.5+.10),y-.60,k*d*.22),Vector3(.19,.11,1.10),Color("#a19e92"))
 	if use==0:
 		if s%4==0:
 			g.box(Vector3(w*.28,h*.32,d*.46),Vector3(w*.42,h*.64,d*.42),wall)
@@ -593,6 +606,7 @@ func _hip_roof(g,w:float,d:float,h:float,roof:Color) -> void:
 
 func _gable(g,w:float,d:float,h:float,roof:Color,wall:Color,industrial:=false) -> void:
 	var ridge:=h+1.65
+	g.finish=Forms.Finish.PLASTER
 	for sign_x in [-1,1]:
 		var x:float=sign_x*w*.5
 		g.triangle(Vector3(x,h,-d*.5),Vector3(x,ridge,0),Vector3(x,h,d*.5),wall,Vector3.RIGHT*sign_x)
@@ -607,14 +621,12 @@ func _gable(g,w:float,d:float,h:float,roof:Color,wall:Color,industrial:=false) -
 func _urban_block(lot:Dictionary,w:float,d:float) -> MeshInstance3D:
 	var g=Forms.new(true)
 	var s:int=lot.style
-	var floors:int=lot.floors
-	var height:=floors*2.8
 	var facade:=Color(["#c5b39a","#d0c6af","#b49377","#c8cfc2"][s%4])
 	g.box(Vector3(0,-.13,0),Vector3(w+2.3,.8,d+2.0),Color("#aba594"))
 	if lot.use==2:
 		# Riverside sheds have wide loading doors, roof monitors and exhaust stacks.
 		g.finish=Forms.Finish.METAL
-		g.box(Vector3(0,2.15,0),Vector3(w+1.2,4.3,d+.8),Color("#a5aa98"))
+		g.box(Vector3(0,2.15,0),Vector3(w+1.2,4.3,d+.8),Color("#8d9493"))
 		_gable(g,w+1.2,d+.8,4.3,Color("#77807f"),facade,true)
 		var front:float=lot.front_sign*(d*.5+.44)
 		for x in [-1,1]:
@@ -632,61 +644,7 @@ func _urban_block(lot:Dictionary,w:float,d:float) -> MeshInstance3D:
 				g.taper(silo,1.05,1.05,4.1,12,Color("#cad0be"))
 				g.taper(silo+Vector3.UP*4.1,1.1,0,.8,12,Color("#839795"))
 	else:
-		var glass:=Color(["#58777b","#627b79","#54727c","#728683"][s%4])
-		var tower:=floors>=9
-		g.finish=Forms.Finish.BRICK
-		g.box(Vector3(0,2,0),Vector3(w+1.2,4,d+1),facade)
-		for side in [-1,1]:
-			g.finish=Forms.Finish.GLASS
-			g.box(Vector3(0,1.7,side*(d*.5+.55)),Vector3(w*.84,2.3,.14),glass)
-		var body_w:=w*(.90 if tower else 1.)
-		var body_d:=d*(.88 if tower else 1.)
-		g.finish=Forms.Finish.GLASS if tower else Forms.Finish.PLASTER
-		g.box(Vector3(0,(height+4)*.5,0),Vector3(body_w,height-4,body_d),glass if tower else facade)
-		g.finish=Forms.Finish.PLAIN
-		for level in range(2,floors):
-			var y:=level*2.8+.35
-			if tower:
-				var band_height:float=.13 if s%3==0 else (.26 if s%3==1 else .17)
-				var band_color:Color=facade if s%3!=0 else Color("#717c7f")
-				g.box(Vector3(0,y,0),Vector3(body_w+.13,band_height,body_d+.13),band_color)
-				if lot.use==0 and level%2==0:
-					var bx:float=body_w*.14*(1 if level%4 else -1)
-					var bz:float=lot.front_sign*(body_d*.5+.41)
-					g.box(Vector3(bx,y+.03,bz),Vector3(body_w*.48,.16,1.02),Color("#b3aea2"))
-					g.box(Vector3(bx,y+.57,bz+lot.front_sign*.44),Vector3(body_w*.47,.78,.075),Color("#84918d"))
-					g.box(Vector3(bx,y+.99,bz+lot.front_sign*.44),Vector3(body_w*.48,.052,.095),Color("#565e60"))
-			else:
-				for side in [-1,1]:
-					g.finish=Forms.Finish.GLASS
-					g.box(Vector3(0,y,side*(body_d*.5+.04)),Vector3(body_w*.88,1.28,.14),glass)
-					g.box(Vector3(side*(body_w*.5+.04),y,0),Vector3(.14,1.28,body_d*.74),glass)
-		g.finish=Forms.Finish.PLAIN
-		if not tower:
-			for side in [-1,1]:
-				for bay in [-.25,0.,.25]:
-					g.box(Vector3(bay*body_w,(height+4)*.5,side*(body_d*.5+.14)),Vector3(.21,height-4,.16),facade)
-		if tower:
-			for side in [-1,1]:
-				g.box(Vector3(side*body_w*.5,(height+4)*.5,-body_d*.28),Vector3(.3,height-4,.57),facade)
-			if s%3==1:
-				for k in range(-2,3):
-					for side in [-1,1]:
-						g.box(Vector3(k*body_w*.18,(height+4)*.5,side*(body_d*.5+.11)),Vector3(.075,height-4,.17),Color("#89908f"))
-			if s%2==0:
-				var crown_h:=1.6+(s%4)*.5
-				g.finish=Forms.Finish.METAL
-				g.box(Vector3(0,height+crown_h*.5,0),Vector3(body_w*.72,crown_h,body_d*.72),glass)
-				g.finish=Forms.Finish.PLAIN
-				for k in range(5):
-					g.box(Vector3(0,height+.40+.19*k,body_d*.36+.04),Vector3(body_w*.50,.09,.11),Color("#414b4c"))
-				g.box(Vector3(0,height+crown_h+.12,0),Vector3(body_w*.74,.32,body_d*.74),facade)
-		g.box(Vector3(0,height+.18,0),Vector3(body_w+.35,.44,body_d+.35),facade)
-		g.box(Vector3(-.52,height+.91,0),Vector3(body_w*.52,1.4,body_d*.48),Color("#929c95"))
-		for unit in range(2):
-			g.box(Vector3(body_w*.27,height+.56,(unit-.5)*body_d*.46),Vector3(.91,.76,1.27),Color("#87948e"))
-		if tower and s%3==0:
-			g.taper(Vector3(-.5,height+1.6,0),.18,.04,3.2,6,facade)
+		Architecture.add(g,lot,w,d,true)
 	_street_furniture(g,lot,w,d)
 	var site=g.attach(self)
 	site.position=lot.pos

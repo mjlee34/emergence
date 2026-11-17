@@ -369,14 +369,14 @@ void check_public_places() {
     int total=0;
     for(const auto &f:city.facilities()) if(is_landmark(f.kind)) {
       ++total;
-      CHECK(f.radius >= (expected==FacilityKind::Tower ? 34. : 29.));
+      CHECK(f.radius >= (expected==FacilityKind::BoulevardMonument ? 34. : 29.));
       CHECK(f.kind==expected && f.started>=24*minutes_per_day*ticks_per_minute);
       CHECK(city.site().elevation(f.center)>1.4 && !city.site().inland_water(f.center));
       for (const auto &lot : city.buildings())
         CHECK(distance(f.center,lot.pos) >= f.radius + 6.4);
       for (const auto &nearby : city.facilities())
         if (&nearby != &f) CHECK(distance(f.center, nearby.center) >= f.radius + nearby.radius + 2.);
-      if (expected==FacilityKind::Statue) {
+      if (expected==FacilityKind::WaterfrontMonument) {
         int water_views=0;
         for (int ray=0; ray<12; ++ray) {
           double a=ray*3.141592653589793/6.;
@@ -386,17 +386,33 @@ void check_public_places() {
         }
         CHECK(water_views>=2);
       }
-      if(expected==FacilityKind::Tower)
+      if(expected==FacilityKind::BoulevardMonument)
         CHECK(std::any_of(city.roads().begin(),city.roads().end(),[&](auto &r){
           return r.type==RoadClass::Arterial && distance(r.path[4],f.center)<100.; }));
     }
     CHECK(total==1);
   };
   c.advance(320000-c.tick());
-  inspect(c,FacilityKind::Statue);
+  inspect(c,FacilityKind::WaterfrontMonument);
   City other(13);
   other.advance(280000);
-  inspect(other,FacilityKind::Tower);
+  inspect(other,FacilityKind::BoulevardMonument);
+  // Sample design draws independently of how often a particular fixture
+  // supplies the necessary waterfront or boulevard site.
+  std::set<std::string> designs;
+  Facility parcel{};
+  parcel.frontage = 19;
+  for (auto kind : {FacilityKind::BoulevardMonument, FacilityKind::WaterfrontMonument}) {
+    parcel.kind = kind;
+    for (int seed = 0; seed < 100; ++seed) {
+      const auto design = landmark_design(seed, parcel);
+      CHECK(design.height_scale >= .98 && design.height_scale <= 1.17);
+      CHECK(design.palette >= 0 && design.palette < 4);
+      CHECK(std::string(design.name) == facility_name(seed, parcel));
+      designs.insert(design.model);
+    }
+  }
+  CHECK(designs.size() == 6);
 }
 
 int main() {
