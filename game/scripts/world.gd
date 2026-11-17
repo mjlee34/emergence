@@ -9,13 +9,14 @@ var orbit:=Orbit.new()
 var land:=Landscape.new()
 var town:=Town.new()
 var hud:=Hud.new()
-var speed:=1
-var last_speed:=1
+var speed:=10
+var last_speed:=10
 var remainder:=0.
 var state:Dictionary
 var capture_path:=""
 var capture_tick:=0
 var capture_detail:=false
+var atlas:=false
 
 func _ready() -> void:
 	var seed_value:=147
@@ -23,6 +24,7 @@ func _ready() -> void:
 		if arg.begins_with("--seed="): seed_value=int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--capture="): capture_path=arg.trim_prefix("--capture=")
 		if arg.begins_with("--at="): capture_tick=maxi(0,int(arg.trim_prefix("--at=")))
+		if arg=="--atlas": atlas=true
 		if arg=="--detail": capture_detail=true
 		if arg.begins_with("--speed="):
 			var requested:=int(arg.trim_prefix("--speed="))
@@ -36,7 +38,15 @@ func _ready() -> void:
 	add_child(town)
 	town.create(model,land)
 	add_child(orbit)
+	if atlas:
+		orbit.following=false
+		orbit.azimuth=-.30
+		orbit.elevation=.74
+		orbit.extent=560
+		orbit.pivot=Vector3(0,7,0)
+		orbit.update_view()
 	if capture_detail:
+		orbit.following=false
 		orbit.extent=100
 		orbit.pivot=Vector3(-25,4,8)
 		orbit.update_view()
@@ -49,6 +59,7 @@ func _ready() -> void:
 		model.step(capture_tick)
 		speed=0
 	state=model.summary()
+	orbit.frame_city(state.bounds,1.)
 	_sync()
 	if capture_path!="": _capture.call_deferred()
 
@@ -93,17 +104,20 @@ func _process(delta:float) -> void:
 		model.step(ticks)
 		remainder-=ticks
 		state=model.summary()
+	orbit.frame_city(state.bounds,1.-exp(-delta*1.8))
 	_sync()
 
 func _sync() -> void:
 	town.sync(state,remainder)
 	hud.display(state,speed,orbit.azimuth)
+	hud.sync_map(model,state.roads)
 
 func _select_speed(value:int) -> void:
 	if value==0 and speed==0: value=last_speed
 	if value>0: last_speed=value
 	speed=value
 	hud.display(state,speed,orbit.azimuth)
+	hud.sync_map(model,state.roads)
 
 func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:

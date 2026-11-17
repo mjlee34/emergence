@@ -19,6 +19,8 @@ protected:
                          &CityModel::height_at);
     ClassDB::bind_method(D_METHOD("river_x", "z"), &CityModel::river_x);
     ClassDB::bind_method(D_METHOD("summary"), &CityModel::summary);
+    ClassDB::bind_method(D_METHOD("renewed_lot", "index"),
+                         &CityModel::renewed_lot);
     ClassDB::bind_method(D_METHOD("street", "index"), &CityModel::street);
     ClassDB::bind_method(D_METHOD("lot", "index"), &CityModel::lot);
     ClassDB::bind_method(D_METHOD("traffic", "fraction"), &CityModel::traffic);
@@ -35,9 +37,16 @@ public:
     d["population"] = state.population();
     d["roads"] = int(state.roads().size());
     d["buildings"] = int(state.buildings().size());
+    auto bounds = state.bounds();
+    d["bounds"] = Vector4(bounds[0], bounds[1], bounds[2], bounds[3]);
+    d["renewals"] = int(state.renewals().size());
     d["event"] = String(state.events().back().text.c_str());
     d["event_tick"] = state.events().back().tick;
     return d;
+  }
+  int renewed_lot(int index) const {
+    ERR_FAIL_INDEX_V(index, int(state.renewals().size()), -1);
+    return state.renewals()[index];
   }
   Dictionary street(int index) const {
     Dictionary d;
@@ -45,9 +54,14 @@ public:
     const auto &r = state.roads()[index];
     PackedVector3Array path;
     for (auto p : r.path)
-      path.push_back(surface(p));
+      path.push_back(Vector3(p.x, city::road_height(r, p), p.z));
+    const auto &a = state.nodes()[r.a], &b = state.nodes()[r.b];
+    d["a"] = Vector2i(a.col, a.row);
+    d["b"] = Vector2i(b.col, b.row);
     d["path"] = path;
-    d["avenue"] = r.avenue;
+    d["class"] = int(r.type);
+    d["width"] = city::road_width(r.type);
+    d["bridge"] = r.bridge;
     return d;
   }
   Dictionary lot(int index) const {
@@ -58,6 +72,7 @@ public:
     d["yaw"] = b.yaw;
     d["style"] = b.style;
     d["use"] = int(b.use);
+    d["floors"] = b.floors;
     d["started"] = b.started;
     return d;
   }
@@ -66,7 +81,8 @@ public:
     for (auto &v : state.vehicles()) {
       double yaw;
       auto p = state.vehicle_position(v, yaw, fraction);
-      out.push_back(Vector4(p.x, city::ground(p), p.z, yaw));
+      out.push_back(
+          Vector4(p.x, city::road_height(state.roads()[v.edge], p), p.z, yaw));
     }
     return out;
   }

@@ -20,6 +20,12 @@ var day:Label
 var roads:Label
 var entry:Label
 var reset_button:=Button.new()
+var map_button:=Button.new()
+var map_open:=true
+var map_paths:Array[PackedVector2Array]=[]
+var map_ranks:=PackedInt32Array()
+var river:=PackedVector2Array()
+const ROUTE_COLORS=[Color("#a6b5a3"),Color("#7dd4c7"),Color("#f6b95d")]
 
 func _ready() -> void:
 	mouse_filter=Control.MOUSE_FILTER_IGNORE
@@ -39,11 +45,18 @@ func _ready() -> void:
 	live=_label(self,"",Vector2.ZERO,14,IVORY)
 	live.horizontal_alignment=HORIZONTAL_ALIGNMENT_CENTER
 	live.add_theme_stylebox_override("normal",_box(Color("#203532eb"),6,Color.TRANSPARENT,0))
-	reset_button.text="Reset view"
-	reset_button.tooltip_text="Return to the opening camera (H)"
+	reset_button.text="Fit city"
+	reset_button.tooltip_text="Follow the growing city (H)"
 	_style_button(reset_button,false)
 	add_child(reset_button)
 	reset_button.pressed.connect(func(): home_requested.emit())
+	map_button.text="Street plan  ▴"
+	_style_button(map_button,false)
+	add_child(map_button)
+	map_button.pressed.connect(func():
+		map_open=not map_open
+		map_button.text="Street plan  ▴" if map_open else "Street plan  ▾"
+		queue_redraw())
 	dock.add_theme_stylebox_override("panel",_box(INK.darkened(.16),10,Color("#587066"),1))
 	add_child(dock)
 	var row:=HBoxContainer.new()
@@ -124,7 +137,8 @@ func _layout() -> void:
 	dock.position=Vector2((size.x-w.x)*.5,size.y-w.y-32)
 	live.position=Vector2(size.x-169,22)
 	live.size.x=134
-	reset_button.position=Vector2(size.x-reset_button.get_combined_minimum_size().x-35,69)
+	reset_button.position=Vector2(size.x-reset_button.get_combined_minimum_size().x-35,66)
+	map_button.position=Vector2(reset_button.position.x-map_button.get_combined_minimum_size().x-7,66)
 	queue_redraw()
 
 func display(data:Dictionary,multiplier:int,angle:float) -> void:
@@ -158,6 +172,7 @@ func _draw() -> void:
 		for k in range(5):
 			points.append(Vector2(36+k*7,46+i*4+[-2,-7,-1,-9,-4][k]))
 		draw_polyline(points,GOLD,1.75,true)
+	if map_open: _draw_plan()
 	var center:=Vector2(59,size.y-66)
 	draw_arc(center,22,0,TAU,48,Color("#bdcbb695"),1,true)
 	var n:=Vector2(sin(heading),-cos(heading))
@@ -165,3 +180,36 @@ func _draw() -> void:
 	draw_line(center,center-n*12,MUTED,1.5,true)
 	draw_string(sans,center+Vector2(-4,-30),"N",HORIZONTAL_ALIGNMENT_LEFT,-1,11,IVORY)
 	draw_string(sans,Vector2(size.x-297,size.y-23),"Drag to orbit   ·   Shift-drag to pan   ·   Scroll to zoom",HORIZONTAL_ALIGNMENT_LEFT,-1,11,MUTED)
+
+
+func sync_map(sim,count:int) -> void:
+	if map_paths.size()==count: return
+	if river.is_empty():
+		for z in range(-320,321,8):
+			river.append(Vector2(sim.river_x(z),z))
+	while map_paths.size()<count:
+		var data:Dictionary=sim.street(map_paths.size())
+		var line:=PackedVector2Array()
+		for p in data.path: line.append(Vector2(p.x,p.z))
+		map_paths.append(line)
+		map_ranks.append(data["class"])
+	queue_redraw()
+
+func _draw_plan() -> void:
+	var panel:=Rect2(size.x-301,111,266,204)
+	draw_rect(panel,Color("#182b29ef"))
+	var origin:=panel.position+Vector2(133,88)
+	var scale_factor:=.247
+	draw_set_transform(origin,0,Vector2.ONE*scale_factor)
+	if river.size()>1: draw_polyline(river,Color("#426b70"),24.,true)
+	for rank in 3:
+		for i in map_paths.size():
+			if map_ranks[i]==rank:
+				draw_polyline(map_paths[i],ROUTE_COLORS[rank],[2.4,4.9,8.2][rank],true)
+	draw_set_transform(Vector2.ZERO)
+	var y:=panel.end.y-15
+	var x:=panel.position.x+12
+	for rank in [2,1,0]:
+		draw_line(Vector2(x,y-4),Vector2(x+12,y-4),ROUTE_COLORS[rank],rank+1.5,true)
+		draw_string(sans,Vector2(x+16,y),["Local","Collector","Arterial"][rank],HORIZONTAL_ALIGNMENT_LEFT,-1,13,IVORY)
+		x+=85

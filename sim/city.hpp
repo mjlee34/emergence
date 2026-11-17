@@ -2,7 +2,10 @@
 #include "geo/terrain.hpp"
 #include <array>
 #include <cstdint>
+#include <deque>
+#include <map>
 #include <string>
+#include <utility>
 #include <vector>
 namespace city {
 struct Junction {
@@ -10,18 +13,25 @@ struct Junction {
   Point pos;
   std::vector<int> edges;
 };
+enum class RoadClass { Local, Collector, Arterial };
+double road_width(RoadClass type);
+double speed_factor(RoadClass type);
 struct Road {
   int a, b;
-  bool avenue;
+  RoadClass type;
+  bool bridge;
+  unsigned available_lots = 15;
   std::array<Point, 9> path;
   std::array<double, 9> lengths;
 };
+double road_height(const Road &road, Point p);
 enum class Use { Housing, Shops, Works };
 struct Building {
   Point pos;
   double yaw;
   int style, capacity, started;
   Use use;
+  int frontage, floors;
 };
 struct Vehicle {
   int edge, from, destination;
@@ -44,6 +54,8 @@ public:
   const auto &roads() const { return roads_; }
   const auto &buildings() const { return buildings_; }
   const auto &vehicles() const { return vehicles_; }
+  const auto &renewals() const { return renewals_; }
+  const auto &bounds() const { return bounds_; }
   const auto &events() const { return events_; }
   Point vehicle_position(const Vehicle &car, double &yaw,
                          double fraction = 0) const;
@@ -57,6 +69,13 @@ private:
   std::vector<Building> buildings_;
   std::vector<Vehicle> vehicles_;
   std::vector<Event> events_;
+  std::map<std::pair<int, int>, int> node_index_;
+  std::vector<int> renewals_;
+  std::deque<std::pair<int, int>> completions_;
+  std::array<double, 4> bounds_{-30, 6, -30, 6};
+  void spawn_vehicle();
+  bool redevelop();
+  int target_floors(const Building &b) const;
   uint32_t draw();
   int find_node(int c, int r) const;
   bool grow();

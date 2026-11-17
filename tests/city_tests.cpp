@@ -1,4 +1,5 @@
 #include "replay/checkpoint.hpp"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <iostream>
@@ -48,6 +49,41 @@ int main() {
               << a.roads().size() << ", buildings " << lots << " / "
               << a.buildings().size() << "\n";
   }
+  City regional(147u);
+  double initial_span = regional.bounds()[2] - regional.bounds()[0];
+  regional.advance(7200);
+  CHECK(regional.bounds()[2] - regional.bounds()[0] > 3. * initial_span);
+  CHECK(regional.renewals().size() > 0);
+  bool tall = false, industrial = false;
+  int banks[2] = {};
+  for (const auto &b : regional.buildings()) {
+    ++banks[b.pos.x > river_center(b.pos.z)];
+    tall |= b.floors >= 9;
+    industrial |= b.use == Use::Works;
+    CHECK(ground(b.pos) > 2.5);
+  }
+  CHECK(tall && industrial && banks[0] > 100 && banks[1] > 100);
+  int bridges = 0;
+  for (const auto &road : regional.roads()) {
+    if (!road.bridge)
+      continue;
+    ++bridges;
+    bool water = false;
+    CHECK(ground(road.path.front()) > 1.8 && ground(road.path.back()) > 1.8);
+    for (const auto &p : road.path) {
+      water |= ground(p) < 0.;
+      CHECK(road_height(road, p) > 1.8);
+    }
+    CHECK(water);
+  }
+  CHECK(bridges == 2);
+  CHECK(road_width(RoadClass::Arterial) > 2 * road_width(RoadClass::Local));
+  CHECK(speed_factor(RoadClass::Arterial) > speed_factor(RoadClass::Collector));
+  const auto renewed = restore(checkpoint(regional));
+  CHECK(renewed && renewed->digest() == regional.digest());
+  std::cout << "Regional replay: " << regional.population() << " residents, "
+            << regional.buildings().size() << " buildings and " << bridges
+            << " crossings.\n";
   std::cout << "Test time "
             << std::chrono::duration<double>(std::chrono::steady_clock::now() -
                                              start)

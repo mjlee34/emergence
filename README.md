@@ -1,21 +1,22 @@
 # EMERGENCE
 
-Watch a settlement grow along a wooded river valley. As housing fills, the town opens streets, develops roadside lots, and makes room for new residents. Twenty-two vehicles choose destinations and drive through the changing street network.
+Watch Alder Reach grow from a market town into a compact city on both banks of a river. The boulevard reaches across the water, collectors feed the surrounding neighborhoods, workshops gather on the east bank, and central parcels are rebuilt with taller buildings.
 
-![Alder Reach after seven simulation days](captures/day-seven.png)
+![The two-bank city from the regional camera](captures/region-7200.png)
 
-[Opening settlement](captures/alder-reach.png) · [Eight seconds of growth at 10×](captures/growth.mp4)
+[18-second growth film at 100×](captures/growth.mp4) · [Downtown street detail](captures/market-district.png)
 
 ## Play on Apple Silicon
 
-Open `dist/EMERGENCE.app` after exporting the project. The application starts immediately in Alder Reach. Select **10×** to watch streets open and construction finish in seconds. One day lasts 24 seconds at normal speed.
+Open `dist/EMERGENCE.app` after exporting. The camera follows the footprint of the city at the opening speed of **10×**. Select **100×** to see roughly 75 simulation days in 18 seconds. The street plan in the upper right traces the actual network. Gold marks arterials, teal marks collectors, and thin pale lines mark local streets.
 
 | Action | Control |
 | --- | --- |
-| Orbit | Drag |
+| Orbit and take control of the camera | Drag |
 | Pan | Shift-drag, middle-drag, or trackpad pan |
 | Zoom | Scroll or pinch |
-| Return to the opening view | H or Reset view |
+| Frame the current city and resume tracking | H or Fit city |
+| Show or hide the network map | Street plan |
 | Pause and resume the previous speed | Space or the pause button |
 | Choose 1×, 10×, 100×, or 1000× | Keys 1–4 or the speed buttons |
 
@@ -45,12 +46,28 @@ The Godot runtime, dependency checkout, and build outputs stay local. All landsc
 
 ## The vertical slice
 
-The fixture is a 432 × 328 metre landscape. The opening settlement has a market street and several short side streets. Every four ticks, immigration can fill completed housing. At high occupancy the planner periodically evaluates road extensions or infill sites. Each new building takes 24 ticks to complete, at which point its housing capacity comes online. Vehicles choose a new destination at the end of a trip and follow the graph through intersections.
+The fixture covers **960 × 640 metres**. Housing demand funds construction and unlocks expansion toward six district sites. The planner reserves through corridors, connects district centers and fills neighboring blocks. On developed central parcels, redevelopment increases height and housing capacity. Additional capacity becomes available when construction finishes.
 
-The default seed is 147. At tick zero it has **1,507 residents, 23 streets, and 44 buildings**. At tick 640 it has **2,145 residents, 35 streets, and 72 buildings**. The two screenshots use the same camera and seed. To repeat the capture, pass an absolute image path.
+| Road class | Carriageway | Function |
+| --- | --- | --- |
+| Arterial | 14.2 m | Four lanes, a planted median, and the first river crossing |
+| Collector | 7.2 m | Marked two-lane streets connecting districts and a later northern crossing |
+| Local | 4.2 m | Narrow unmarked residential access streets |
+
+Vehicles use least-travel-time paths. Length and street class determine edge cost, speed and lane position. The traffic sample increases with population. Bridge decks use a shared elevation profile for the road mesh and vehicles.
+
+Three captures use seed 147 and one locked regional camera. Span measures the east–west distance between the outermost building centers.
+
+| Simulation day | Residents | Buildings | Street segments | Span | Image |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 1 | 1,405 | 43 | 23 | 197 m | [Opening settlement](captures/region-0.png) |
+| 17 | 4,964 | 144 | 74 | 611 m | [Growth across the river](captures/region-1600.png) |
+| 76 | 19,587 | 479 | 229 | 723 m | [Both river crossings](captures/region-7200.png) |
+
+Repeat a capture with an absolute image path. Drop `--atlas` to use automatic framing, or use `--detail` for the market district.
 
 ```sh
-"$GODOT" --path game --resolution 1440x900 -- --seed=147 --at=640 --capture="$PWD/captures/day-seven.png"
+"$GODOT" --path game --resolution 1440x900 -- --seed=147 --atlas --at=7200 --capture="$PWD/captures/region-7200.png"
 ```
 
 ## Architecture
@@ -59,16 +76,16 @@ The default seed is 147. At tick zero it has **1,507 residents, 23 streets, and 
 | --- | --- |
 | `geo/` | Terrain height, water level relative to local ground, and fixture street coordinates in metres. The analytical fixture supplies the same surface to planning and rendering. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, and event history. This library compiles independently of Godot. |
-| `replay/` | Versioned checkpoints containing seed, tick, and a state checksum. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Version 2 checkpoints contain seed, tick, and a state checksum. Version 1 checkpoints belong to the earlier growth rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, and packed vehicle poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
 ## Engineering limits of this milestone
 
-- **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Free-angle crossings and bridges will require edge splitting and explicit deck elevations.
+- **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Two reserved crossings connect dry banks. District sites and major rights of way are fixture inputs. A free-angle planner for arbitrary geography will also need edge splitting and bridge-site selection.
 - **Terrain integration.** A single height sampler keeps planning and road rendering aligned. Real elevation tiles will need a projected local origin, shared elevation datum, shoreline masks, and a street grading pass. The current location is fictional.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
-- **Growth horizon.** This model fills a finite site and reaches capacity. Household aging, employment, congestion, freight, redevelopment, and decline belong to later milestones.
+- **Growth horizon.** This model fills a finite site and reaches capacity. Household aging, employment-based trips, congestion, freight, and decline belong to later milestones.
 
 ## Verification and profiling
 
@@ -89,4 +106,4 @@ After building the extension and importing the project, run the integration chec
 "$GODOT" --headless --path game --script ../tests/playable.gd
 ```
 
-These checks exercise pause, every speed, camera motion and reset, visible growth, and vehicle movement using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, and road and vehicle bounds.
+These checks exercise pause, every speed, camera motion and reset, visible growth, and vehicle movement using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, and expansion to the far bank.

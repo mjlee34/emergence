@@ -4,10 +4,28 @@
 #include <cmath>
 #include <limits>
 #include <queue>
+#include <tuple>
 
 namespace city {
 namespace {
 constexpr int build_time = 24;
+struct District {
+  int col, row, threshold;
+};
+constexpr std::array<District, 6> districts{{{0, 0, 0},
+                                             {-5, 2, 2200},
+                                             {6, 0, 3500},
+                                             {0, -4, 5200},
+                                             {-3, 5, 7600},
+                                             {7, 4, 10500}}};
+RoadClass hierarchy(int x, int y, int c, int r) {
+  if (y == 0 && r == 0)
+    return RoadClass::Arterial;
+  if ((c == x && (c == 0 || c == -5 || c == 6)) ||
+      (r == y && (r == 2 || r == -4 || r == 5)))
+    return RoadClass::Collector;
+  return RoadClass::Local;
+}
 double segment_distance(Point p, Point a, Point b) {
   double x = b.x - a.x, z = b.z - a.z;
   double t =
@@ -15,12 +33,30 @@ double segment_distance(Point p, Point a, Point b) {
   return distance(p, {a.x + x * t, a.z + z * t});
 }
 } // namespace
+double road_width(RoadClass type) {
+  constexpr double widths[] = {4.2, 7.2, 14.2};
+  return widths[static_cast<int>(type)];
+}
+double speed_factor(RoadClass type) {
+  constexpr double speeds[] = {0.83, 1.35, 2.05};
+  return speeds[static_cast<int>(type)];
+}
+double road_height(const Road &road, Point p) {
+  if (!road.bridge)
+    return ground(p);
+  auto a = road.path.front(), b = road.path.back();
+  double dx = b.x - a.x, dz = b.z - a.z;
+  double t = std::clamp(
+      ((p.x - a.x) * dx + (p.z - a.z) * dz) / (dx * dx + dz * dz), 0., 1.);
+  return std::lerp(ground(a), ground(b), t) + 2.3 * std::sin(3.14159265 * t);
+}
 uint32_t City::draw() {
   random_ = random_ * 1664525u + 1013904223u;
   return random_;
 }
 City::City(uint32_t seed) : seed_(seed), random_(seed) {
   nodes_.push_back({0, 0, street_point(0, 0), {}});
+  node_index_[{0, 0}] = 0;
   // A small market street and incomplete side streets provide the starting
   // frontier.
   for (int dir : {-1, 1})
@@ -43,31 +79,33 @@ City::City(uint32_t seed) : seed_(seed), random_(seed) {
     for (int e = 0; e < int(roads_.size()); ++e)
       develop(e, true);
   population_ = capacity_ * 95 / 100;
-  for (int i = 0; i < 22; ++i) {
-    Vehicle v{};
-    v.speed = .75 + (draw() % 60) * .01;
-    dispatch(v, draw() % nodes_.size());
-    v.along = roads_[v.edge].lengths.back() * (draw() % 98) / 100.;
-    vehicles_.push_back(std::move(v));
-  }
+  for (int i = 0; i < 22; ++i)
+    spawn_vehicle();
   record("Settlement established");
 }
+void City::spawn_vehicle() {
+  Vehicle v{};
+  v.speed = .75 + (draw() % 60) * .01;
+  dispatch(v, draw() % nodes_.size());
+  v.along = roads_[v.edge].lengths.back() * (draw() % 98) / 100.;
+  vehicles_.push_back(std::move(v));
+}
 int City::find_node(int c, int r) const {
-  for (int i = 0; i < int(nodes_.size()); ++i)
-    if (nodes_[i].col == c && nodes_[i].row == r)
-      return i;
-  return -1;
+  auto it = node_index_.find({c, r});
+  return it == node_index_.end() ? -1 : it->second;
 }
 int City::add_road(int a, int c, int r) {
   int b = find_node(c, r);
   if (b < 0) {
     b = nodes_.size();
     nodes_.push_back({c, r, street_point(c, r), {}});
+    node_index_[{c, r}] = b;
   }
   Road road{};
   road.a = a;
   road.b = b;
-  road.avenue = (nodes_[a].row == 0 && r == 0);
+  road.type = hierarchy(nodes_[a].col, nodes_[a].row, c, r);
+  road.bridge = std::abs(nodes_[a].col - c) > 1;
   for (int i = 0; i <= 8; ++i) {
     double t = i / 8.;
     road.path[i] = street_point(std::lerp(double(nodes_[a].col), double(c), t),
@@ -83,112 +121,244 @@ int City::add_road(int a, int c, int r) {
   return e;
 }
 bool City::grow() {
-  double best = -1e9;
-  int origin = -1, col = 0, row = 0;
+  struct Candidate {
+    double score;
+    int origin, col, row;
+  };
+  std::vector<Candidate> candidates;
+  const District *target = nullptr;
+  for (const auto &district : districts)
+    if (population_ >= district.threshold &&
+        find_node(district.col, district.row) < 0) {
+      target = &district;
+      break;
+    }
   for (int i = 0; i < int(nodes_.size()); ++i) {
     const auto &n = nodes_[i];
     for (auto [dc, dr] : std::array<std::pair<int, int>, 4>{
-             {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}}) {
-      int c = n.col + dc, r = n.row + dr, b = find_node(c, r);
+             {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}}) {
+      int c = n.col + dc, r = n.row + dr;
+      // The boulevard crosses the floodplain in one project between dry banks.
+      if (r == 0 && n.row == 0 && c == 3) {
+        if (population_ < 3500)
+          continue;
+        c = n.col == 2 ? 4 : 2;
+      }
+      if (r == -4 && n.row == -4 && c == 4) {
+        if (population_ < 10500)
+          continue;
+        c = n.col == 3 ? 5 : 3;
+      }
+      int b = find_node(c, r);
       if (b >= 0 &&
           (i > b || std::any_of(n.edges.begin(), n.edges.end(), [&](int e) {
              return roads_[e].a == b || roads_[e].b == b;
            })))
         continue;
-      Point end = street_point(c, r);
-      if (std::abs(end.x) > half_width - 15 ||
-          std::abs(end.z) > half_depth - 15)
+      auto p = street_point(c, r);
+      if (std::abs(p.x) > half_width - 18 || std::abs(p.z) > half_depth - 18)
         continue;
-      double grade = 0;
-      Point prev = n.pos;
-      bool viable = true;
-      for (int s = 1; s <= 8 && viable; ++s) {
-        Point p = street_point(n.col + dc * s / 8., n.row + dr * s / 8.);
-        double h = ground(p);
-        grade = std::max(grade, std::abs(h - ground(prev)) / distance(prev, p));
-        viable = h > 1.6 && grade < .21;
-        for (auto &lot : buildings_)
-          if (segment_distance(lot.pos, prev, p) < 6.8) {
-            viable = false;
-            break;
-          }
-        prev = p;
+      auto type = hierarchy(n.col, n.row, c, r);
+      double near = 100.;
+      for (const auto &district : districts)
+        if (population_ >= district.threshold)
+          near = std::min(near, std::hypot(c - district.col, r - district.row));
+      double score =
+          -2.8 * near + double(draw() % 1000) / 310. + (b >= 0 ? 1.2 : 0);
+      if (target) {
+        // Reach the new center along a through corridor, then fill its local
+        // blocks.
+        double remaining =
+            std::abs(target->col - c) + std::abs(target->row - r);
+        double previous =
+            std::abs(target->col - n.col) + std::abs(target->row - n.row);
+        if (remaining < previous && type != RoadClass::Local)
+          score +=
+              35. - 2. * remaining + (type == RoadClass::Arterial ? 2. : 0.);
       }
-      if (!viable)
-        continue;
-      double score = double(draw() % 1000) / 140. -
-                     .055 * distance(end, street_point(0, 0)) - grade * 25 +
-                     (b >= 0 ? 1.5 : 0) + (r == 0 ? 1. : 0);
-      if (score > best) {
-        best = score;
-        origin = i;
-        col = c;
-        row = r;
-      }
+      // Connect both banks by a second route as the northern quarter fills.
+      if (population_ >= 10500 && n.row == -4 && r == -4 && c >= 1 && c <= 6)
+        score += 17.;
+      candidates.push_back({score, i, c, r});
     }
   }
-  if (origin < 0)
-    return false;
-  add_road(origin, col, row);
-  record("Street extension opened");
-  return true;
-}
-bool City::develop(int e, bool initial) {
-  const Road &road = roads_[e];
-  int start = draw() % 4;
-  for (int j = 0; j < 4; ++j) {
-    int slot = (j + start) % 4, k = slot < 2 ? 2 : 6;
-    Point p = road.path[k], next = road.path[k + 1];
-    double dx = next.x - p.x, dz = next.z - p.z, length = std::hypot(dx, dz);
-    double offset = (slot % 2 ? 1 : -1) * (road.avenue ? 8.9 : 8.1);
-    p.x -= dz * offset / length;
-    p.z += dx * offset / length;
-    if (ground(p) < 2.5 ||
-        std::any_of(buildings_.begin(), buildings_.end(), [&](const auto &lot) {
-          return distance(p, lot.pos) < 9.2;
-        }))
+  std::stable_sort(candidates.begin(), candidates.end(),
+                   [](auto a, auto b) { return a.score > b.score; });
+  for (auto candidate : candidates) {
+    const auto &n = nodes_[candidate.origin];
+    auto type = hierarchy(n.col, n.row, candidate.col, candidate.row);
+    Point prev = n.pos, end = street_point(candidate.col, candidate.row);
+    bool viable = true;
+    double clearance = road_width(type) * .5 + 4.3;
+    for (const auto &lot : buildings_)
+      if (segment_distance(lot.pos, prev, end) < clearance) {
+        viable = false;
+        break;
+      }
+    for (int k = 1; k <= 8 && viable; ++k) {
+      Point p =
+          street_point(std::lerp(double(n.col), double(candidate.col), k / 8.),
+                       std::lerp(double(n.row), double(candidate.row), k / 8.));
+      bool crossing = std::abs(n.col - candidate.col) > 1 &&
+                      std::abs(p.x - river_center(p.z)) < 40;
+      viable = crossing ||
+               (ground(p) > 1.8 && ground(prev) > 1.8 &&
+                std::abs(ground(p) - ground(prev)) / distance(prev, p) < .24);
+      prev = p;
+    }
+    if (!viable)
       continue;
-    bool clear = true;
-    for (const auto &other : roads_)
-      for (size_t k2 = 1; k2 < other.path.size(); ++k2)
-        if (segment_distance(p, other.path[k2 - 1], other.path[k2]) < 6.7)
-          clear = false;
-    if (!clear)
-      continue;
-    int style = int(draw() >> 8) % 997;
-    Use use = road.avenue && style % 3 != 0
-                  ? Use::Shops
-                  : (style % 13 == 0 ? Use::Works : Use::Housing);
-    int beds = use == Use::Housing ? 34 + style % 24 : 0;
-    buildings_.push_back({p, -std::atan2(dz, dx), style, beds,
-                          initial ? -build_time : tick_, use});
-    if (initial)
-      capacity_ += beds;
-    else
-      record(use == Use::Housing ? "Housing construction began"
-             : use == Use::Shops ? "Market construction began"
-                                 : "Workshop construction began");
+    int edge = add_road(candidate.origin, candidate.col, candidate.row);
+    record(roads_[edge].bridge            ? "River crossing extended"
+           : type == RoadClass::Arterial  ? "Boulevard extended"
+           : type == RoadClass::Collector ? "Collector opened"
+                                          : "Local street opened");
     return true;
   }
   return false;
 }
+bool City::develop(int e, bool initial) {
+  Road &road = roads_[e];
+  if (!road.available_lots || road.bridge)
+    return false;
+  int start = draw() % 4;
+  for (int j = 0; j < 4; ++j) {
+    int slot = (j + start) % 4, k = slot < 2 ? 2 : 6;
+    unsigned bit = 1u << slot;
+    if (!(road.available_lots & bit))
+      continue;
+    road.available_lots &= ~bit;
+    Point p = road.path[k], next = road.path[k + 1];
+    double dx = next.x - p.x, dz = next.z - p.z, length = std::hypot(dx, dz);
+    double offset = (slot % 2 ? 1 : -1) * (road_width(road.type) * .5 + 6.6);
+    p.x -= dz * offset / length;
+    p.z += dx * offset / length;
+    if (ground(p) < 2.5 ||
+        std::any_of(buildings_.begin(), buildings_.end(), [&](const auto &lot) {
+          return distance(p, lot.pos) < 11.6;
+        }))
+      continue;
+    // Preserve rights of way through undeveloped blocks so early corner lots
+    // cannot sever a future cross-town route.
+    bool clear = true;
+    const auto &node = nodes_[road.a];
+    for (int c = node.col - 2; c <= node.col + 2 && clear; ++c) {
+      for (int r = node.row - 2; r <= node.row + 2 && clear; ++r) {
+        for (auto [dc, dr] :
+             std::array<std::pair<int, int>, 2>{{{1, 0}, {0, 1}}}) {
+          auto type = hierarchy(c, r, c + dc, r + dr);
+          if (type == RoadClass::Local)
+            continue;
+          if (segment_distance(p, street_point(c, r),
+                               street_point(c + dc, r + dr)) <
+              road_width(type) * .5 + 4.9)
+            clear = false;
+        }
+      }
+    }
+    for (const auto &other : roads_) {
+      if (distance(p, other.path[4]) > 42)
+        continue;
+      for (size_t k2 = 1; k2 < other.path.size(); ++k2)
+        if (segment_distance(p, other.path[k2 - 1], other.path[k2]) <
+            road_width(other.type) * .5 + 4.3)
+          clear = false;
+    }
+    if (!clear)
+      continue;
+    int style = int(draw() >> 8) % 997;
+    bool east = p.x > river_center(p.z) + 20;
+    Use use = east && p.z > 0 && style % 3 != 0                 ? Use::Works
+              : road.type != RoadClass::Local && style % 3 == 0 ? Use::Shops
+                                                                : Use::Housing;
+    Building lot{
+        p, -std::atan2(dz, dx), style, 0, initial ? -build_time : tick_, use, e,
+        1};
+    lot.floors = target_floors(lot);
+    lot.capacity = use == Use::Housing ? 13 * lot.floors + style % 12 + 6 : 0;
+    buildings_.push_back(lot);
+    bounds_[0] = std::min(bounds_[0], p.x);
+    bounds_[1] = std::min(bounds_[1], p.z);
+    bounds_[2] = std::max(bounds_[2], p.x);
+    bounds_[3] = std::max(bounds_[3], p.z);
+    if (initial)
+      capacity_ += lot.capacity;
+    else {
+      completions_.push_back({tick_ + build_time, lot.capacity});
+      record(use == Use::Housing ? "Housing construction began"
+             : use == Use::Shops ? "Market construction began"
+                                 : "Workshop construction began");
+    }
+    return true;
+  }
+  return false;
+}
+int City::target_floors(const Building &b) const {
+  if (b.use == Use::Works)
+    return 1 + b.style % 2;
+  int base = 1 + b.style % 3;
+  double radius = distance(b.pos, street_point(0, 0));
+  bool frontage = roads_[b.frontage].type != RoadClass::Local;
+  if (population_ >= 6500 && radius < 78 && frontage)
+    return 9 + b.style % 8;
+  if (population_ >= 3200 && radius < 100)
+    return 4 + b.style % (frontage ? 5 : 3);
+  if (population_ >= 5500 && frontage && radius < 270)
+    return 4 + b.style % 4;
+  return base;
+}
+bool City::redevelop() {
+  int chosen = -1;
+  double best = 0;
+  for (int i = 0; i < int(buildings_.size()); ++i) {
+    const auto &b = buildings_[i];
+    int gain = target_floors(b) - b.floors;
+    if (gain <= 0 || tick_ - b.started < build_time)
+      continue;
+    double rank = gain * 100. - distance(b.pos, street_point(0, 0)) * .12;
+    if (rank > best) {
+      best = rank;
+      chosen = i;
+    }
+  }
+  if (chosen < 0)
+    return false;
+  auto &b = buildings_[chosen];
+  int floors = target_floors(b);
+  int gain = b.use == Use::Housing ? 13 * (floors - b.floors) : 0;
+  b.floors = floors;
+  b.capacity += gain;
+  b.started = tick_;
+  completions_.push_back({tick_ + build_time, gain});
+  renewals_.push_back(chosen);
+  record("Downtown block redeveloped");
+  return true;
+}
 void City::dispatch(Vehicle &v, int start) {
-  // Breadth-first routing minimizes intersections traversed in this short-block
-  // network.
   int target = (start + 1 + draw() % (nodes_.size() - 1)) % nodes_.size();
   std::vector<int> via(nodes_.size(), -1);
-  std::queue<int> queue;
-  queue.push(start);
-  via[start] = -2;
-  while (via[target] < 0) {
-    int n = queue.front();
+  std::vector<double> cost(nodes_.size(),
+                           std::numeric_limits<double>::infinity());
+  using Entry = std::pair<double, int>;
+  std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> queue;
+  queue.push({0, start});
+  cost[start] = 0;
+  while (!queue.empty()) {
+    auto [elapsed, n] = queue.top();
     queue.pop();
+    if (n == target)
+      break;
+    if (elapsed > cost[n])
+      continue;
     for (int e : nodes_[n].edges) {
-      int next = roads_[e].a == n ? roads_[e].b : roads_[e].a;
-      if (via[next] != -1)
+      const auto &road = roads_[e];
+      int next = road.a == n ? road.b : road.a;
+      double arrival = elapsed + road.lengths.back() / speed_factor(road.type);
+      if (arrival >= cost[next])
         continue;
+      cost[next] = arrival;
       via[next] = e;
-      queue.push(next);
+      queue.push({arrival, next});
     }
   }
   v.route.clear();
@@ -207,7 +377,8 @@ Point City::vehicle_position(const Vehicle &v, double &yaw,
                              double fraction) const {
   const auto &road = roads_[v.edge];
   bool forward = v.from == road.a;
-  double d = std::clamp(v.along + fraction * v.speed, 0., road.lengths.back());
+  double d = std::clamp(v.along + fraction * v.speed * speed_factor(road.type),
+                        0., road.lengths.back());
   if (!forward)
     d = road.lengths.back() - d;
   int i = 1;
@@ -218,35 +389,40 @@ Point City::vehicle_position(const Vehicle &v, double &yaw,
   double f = (d - road.lengths[i - 1]) / len, sign = forward ? 1 : -1;
   double dx = (b.x - a.x) * sign / len, dz = (b.z - a.z) * sign / len;
   yaw = -std::atan2(dz, dx);
-  return {std::lerp(a.x, b.x, f) - dz * .82, std::lerp(a.z, b.z, f) + dx * .82};
+  double lane = road.type == RoadClass::Arterial
+                    ? (v.speed > 1.02 ? 2.42 : 5.35)
+                    : road_width(road.type) * .22;
+  return {std::lerp(a.x, b.x, f) - dz * lane,
+          std::lerp(a.z, b.z, f) + dx * lane};
 }
 void City::advance(int ticks) {
   for (int i = 0; i < ticks; ++i) {
     ++tick_;
-    // Construction is append-only; only recent starts can complete on this
-    // tick.
-    for (auto it = buildings_.rbegin();
-         it != buildings_.rend() && it->started >= tick_ - build_time; ++it)
-      if (it->started == tick_ - build_time)
-        capacity_ += it->capacity;
-    if (tick_ % 4 == 0 && population_ < capacity_)
-      population_ += std::min(capacity_ - population_, int(2 + draw() % 5));
-    if (tick_ % 16 == 0 && population_ * 100 >= capacity_ * 86 &&
-        tick_ >= vacant_ticks_) {
-      bool built = false;
-      if (tick_ % 64 == 16 && grow())
-        built = develop(roads_.size() - 1, false);
-      if (!built) {
-        int start = draw() % roads_.size();
-        for (int j = 0; j < int(roads_.size()) && !built; ++j)
-          built = develop((start + j) % roads_.size(), false);
-      }
-      if (!built && !grow())
-        vacant_ticks_ = std::numeric_limits<int>::max();
+    while (!completions_.empty() && completions_.front().first <= tick_) {
+      capacity_ += completions_.front().second;
+      completions_.pop_front();
     }
+    if (tick_ % 4 == 0 && population_ < capacity_)
+      population_ += std::min(capacity_ - population_,
+                              4 + population_ / 250 + int(draw() % 5));
+    if (tick_ % 12 == 0 && population_ * 100 >= capacity_ * 82 &&
+        tick_ >= vacant_ticks_) {
+      if (tick_ % 48 == 12)
+        grow();
+      bool built = (tick_ % 60 == 0 && redevelop());
+      int start = (tick_ % 24 == 12) ? int(roads_.size() - 1)
+                                     : int(draw() % roads_.size());
+      for (int j = 0; j < int(roads_.size()) && !built; ++j)
+        built = develop((start + j) % roads_.size(), false);
+      if (!built && !grow() && !redevelop())
+        vacant_ticks_ = tick_ + 192;
+    }
+    if (tick_ % 96 == 0 &&
+        int(vehicles_.size()) < std::min(115, 22 + population_ / 190))
+      spawn_vehicle();
     for (auto &v : vehicles_) {
       const auto &road = roads_[v.edge];
-      v.along += v.speed;
+      v.along += v.speed * speed_factor(road.type);
       if (v.along >= road.lengths.back()) {
         double carry = v.along - road.lengths.back();
         int end = road.a == v.from ? road.b : road.a;
@@ -290,6 +466,8 @@ uint64_t City::digest() const {
     mix(std::bit_cast<uint64_t>(b.pos.z));
     mix(b.style);
     mix(b.started);
+    mix(b.floors);
+    mix(b.capacity);
   }
   for (const auto &v : vehicles_) {
     mix(v.edge);

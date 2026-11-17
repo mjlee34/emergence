@@ -1,14 +1,18 @@
 extends Node3D
 const Forms = preload("res://scripts/forms.gd")
-const X = 216
-const Z = 164
-const STEP = 4
+const X = 480
+const Z = 320
+const STEP = 5
 var model
 var groves: Array[MultiMesh]=[]
 var species:=PackedByteArray()
 var instance_ids:=PackedInt32Array()
 var tree_sites := PackedVector3Array()
 var active := PackedByteArray()
+var tree_cells: Dictionary = {}
+
+func _cell(p:Vector3) -> Vector2i:
+	return Vector2i(floori(p.x/32.),floori(p.z/32.))
 
 func create(sim) -> void:
 	model = sim
@@ -94,7 +98,7 @@ func _forest(rng: RandomNumberGenerator) -> void:
 		instances.use_colors=true
 		instances.mesh=mesh
 		groves.append(instances)
-	for i in range(4700):
+	for i in range(11500):
 		var x := rng.randf_range(-X+3,X-3)
 		var z := rng.randf_range(-Z+3,Z-3)
 		var h: float = model.height_at(x,z)
@@ -106,6 +110,9 @@ func _forest(rng: RandomNumberGenerator) -> void:
 		var kind:=1 if rng.randf()<(.29 if h<12 else .08)+.11*sin(z*.08+x*.04) else 0
 		species.append(kind)
 		instance_ids.append(poses[kind].size())
+		var cell:=_cell(pos)
+		if not tree_cells.has(cell): tree_cells[cell]=[]
+		tree_cells[cell].append(tree_sites.size())
 		tree_sites.append(pos)
 		active.append(1)
 		poses[kind].append(Transform3D(Basis(Vector3.UP,rng.randf()*TAU).scaled(Vector3.ONE*size),pos))
@@ -123,12 +130,17 @@ func _forest(rng: RandomNumberGenerator) -> void:
 func clear_street(path: PackedVector3Array, clearance: float) -> void:
 	var a := Vector2(path[0].x,path[0].z)
 	var b := Vector2(path[-1].x,path[-1].z)
-	for i in tree_sites.size():
-		if not active[i]: continue
-		var p := Vector2(tree_sites[i].x,tree_sites[i].z)
-		if Geometry2D.get_closest_point_to_segment(p,a,b).distance_squared_to(p)<clearance*clearance:
-			active[i]=0
-			groves[species[i]].set_instance_transform(instance_ids[i],Transform3D(Basis.IDENTITY,Vector3(0,-200,0)))
+	var margin:=Vector3(clearance+3,0,clearance+3)
+	var first:=_cell(path[0].min(path[-1])-margin)
+	var last:=_cell(path[0].max(path[-1])+margin)
+	for x in range(first.x,last.x+1):
+		for z in range(first.y,last.y+1):
+			for i in tree_cells.get(Vector2i(x,z),[]):
+				if not active[i]: continue
+				var p:=Vector2(tree_sites[i].x,tree_sites[i].z)
+				if Geometry2D.get_closest_point_to_segment(p,a,b).distance_squared_to(p)<clearance*clearance:
+					active[i]=0
+					groves[species[i]].set_instance_transform(instance_ids[i],Transform3D(Basis.IDENTITY,Vector3(0,-200,0)))
 
 func clear_lot(pos: Vector3) -> void:
 	clear_street(PackedVector3Array([pos, pos+Vector3(.01,0,0)]),6.8)
