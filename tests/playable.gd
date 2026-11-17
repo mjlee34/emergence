@@ -40,6 +40,29 @@ func check_pedestrian_click(world) -> void:
 		return
 	check(false, "No visible commuter in the opening market street")
 
+func check_construction(world, initial: Dictionary) -> void:
+	var street_id:int=initial.roads
+	var lot_id:int=initial.buildings
+	check(world.town.roadworks.has(street_id) and world.town.construction.has(lot_id),"First construction site missing")
+	if not world.town.roadworks.has(street_id) or not world.town.construction.has(lot_id): return
+	var street=world.town.roadworks[street_id]
+	var building=world.town.construction[lot_id]
+	check(building.frame.visible and building.building.scale==Vector3.ONE,"Building frame or finished proportions incorrect")
+	key(KEY_SPACE)
+	var pos:Vector3=street.machine.position
+	var angle:float=building.jib.rotation.y
+	world._process(.5)
+	check(street.machine.position==pos and building.jib.rotation.y==angle,"Paused construction kept moving")
+	key(KEY_1)
+	world._process(.125)
+	check(street.progress>0 and building.jib.rotation.y!=angle,"Crane did not interpolate between ticks")
+	world.hud.works_button.pressed.emit()
+	world._process(.1)
+	check(world.watching_construction and world.construction_target.y>=0,"Construction camera failed to find a site")
+	world.hud.works_button.pressed.emit()
+	check(not world.watching_construction,"Construction camera did not release")
+	world._street_view()
+
 func run() -> void:
 	var world = load("res://main.tscn").instantiate()
 	root.add_child(world)
@@ -69,6 +92,7 @@ func run() -> void:
 		world._process(.25)
 		check(world.state.tick-before==[1,10,100,1000][i-1],"Speed control advanced the wrong number of ticks")
 	check(world.town.roads>initial.roads and world.town.buildings>initial.buildings,"Growth did not reach the scene")
+	check_construction(world,initial)
 	key(KEY_1)
 	var first:Vector3=world.town.cars[0].position
 	world._process(.5)
@@ -107,6 +131,7 @@ func run() -> void:
 	key(KEY_4)
 	world._process(60.)
 	world.orbit.home()
+	check(not world.town.roadworks.has(initial.roads) and not world.town.construction.has(initial.buildings),"Completed site retained its construction rig")
 	check(world.orbit.size>small_extent,"Camera did not expand with the city")
 	check(world.town.sites.size()==world.state.buildings,"Redevelopment duplicated a parcel")
 	check(world.town.renewals==world.state.renewals,"Redevelopment did not reach the scene")

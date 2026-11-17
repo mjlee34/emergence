@@ -3,6 +3,7 @@ extends RefCounted
 var surface := SurfaceTool.new()
 enum Finish { PLAIN, ROAD, WALK, BRICK, SLATE, MEADOW, GLASS, METAL, PLASTER, FELT, LAMP }
 var finish:=Finish.PLAIN
+var construction_lag:=0.0
 var detailed:bool
 var material:Material
 static var built_material:ShaderMaterial
@@ -44,7 +45,7 @@ func triangle(a: Vector3, b: Vector3, c: Vector3, color: Color, outward: Vector3
 		var v:=normal.cross(tangent)
 		var sign_v:float=signf(v.dot(down))
 		surface.set_tangent(Plane(tangent,sign_v))
-		surface.set_uv2(Vector2(finish,0))
+		surface.set_uv2(Vector2(finish,construction_lag))
 		for p:Vector3 in [a,b,c]:
 			surface.set_uv(Vector2(p.dot(axis),p.z if top else -p.y))
 			surface.add_vertex(p)
@@ -97,6 +98,16 @@ func profile(center:Vector3,rings:Array,color:Color,sides:=10) -> void:
 		var a:=TAU*j/sides
 		var b:=TAU*(j+1)/sides
 		triangle(top,top+Vector3(last.x*cos(a),0,last.z*sin(a)),top+Vector3(last.x*cos(b),0,last.z*sin(b)),color,Vector3.UP)
+
+func beam(a:Vector3,b:Vector3,width:float,color:Color) -> void:
+	var axis:=(b-a).normalized()
+	var right:=axis.cross(Vector3.UP if absf(axis.y)<.95 else Vector3.RIGHT).normalized()*width*.5
+	var front:=axis.cross(right)
+	var corners:=[right+front,-right+front,-right-front,right-front]
+	for i in 4:
+		var u:Vector3=corners[i]
+		var v:Vector3=corners[(i+1)%4]
+		quad(a+u,a+v,b+v,b+u,color,u+v)
 
 func wheel(center:Vector3,radius:float,side:int) -> void:
 	var axis:=Vector3.BACK*side

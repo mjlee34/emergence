@@ -10,6 +10,9 @@ uniform sampler2D walk_surface : filter_linear_mipmap_anisotropic, repeat_enable
 uniform sampler2D brick_surface : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D slate_surface : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D meadow_surface : filter_linear_mipmap_anisotropic, repeat_enable;
+// Workfront is a plane in mesh coordinates. The UV2 offset stages road layers.
+instance uniform vec4 workfront = vec4(0.,0.,0.,2.);
+instance uniform float built_height = 10000.;
 instance uniform float occupancy = 0.0;
 uniform float night = 0.0;
 varying vec3 local;
@@ -17,6 +20,7 @@ varying flat vec2 building_key;
 void vertex(){ local=VERTEX; building_key=floor(MODEL_MATRIX[3].xz); }
 float hash(vec2 p){ return fract(sin(dot(p,vec2(53.315,18.713)))*8175.15); }
 void fragment(){
+	if(local.y>built_height || dot(local.xz,workfront.xy)+workfront.z+UV2.y>workfront.w) discard;
 	int kind=int(UV2.x+.5);
 	vec3 base=COLOR.rgb;
 	vec3 detail=vec3(.5,.5,.87);

@@ -24,6 +24,7 @@ struct Road {
   int a, b;
   RoadClass type;
   bool bridge;
+  int started = 0, opens = 0;
   unsigned available_lots = 15;
   std::array<Point, 9> path;
   std::array<double, 9> lengths;
@@ -36,6 +37,7 @@ struct Building {
   int style, capacity, started;
   Use use;
   int frontage, floors;
+  int previous_floors = 0;
 };
 struct Vehicle {
   int edge, from, destination;
@@ -82,9 +84,11 @@ private:
     int tick, lot, beds;
   };
   std::deque<Completion> completions_;
+  std::multimap<int, int> road_openings_;
   Life life_;
   Economy economy_;
   std::array<double, 4> bounds_{-30, 6, -30, 6};
+  bool connected(int node) const;
   void spawn_vehicle();
   bool redevelop();
   int target_floors(const Building &b) const;

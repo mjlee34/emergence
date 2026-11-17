@@ -4,6 +4,8 @@ Alder Reach opens at 07:45. On the market street, commuters pass the bakery on t
 
 ![Street and regional views of Alder Reach before and after the material and lighting update](captures/visual-comparison.jpg)
 
+[Watch a street, a bridge and an eight-storey redevelopment under construction](captures/construction.mp4) · [Construction stages](captures/construction-stages.jpg)
+
 [Street detail](captures/alder-street.jpg) · [Downtown in daylight](captures/alder-downtown.jpg) · [Night streets](captures/alder-night.jpg)
 
 [Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
@@ -16,6 +18,7 @@ Open `dist/EMERGENCE.app` after exporting. The simulation starts at **1×** with
 | --- | --- |
 | Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
 | Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
+| Follow the nearest active construction project | G or Construction |
 | Follow a pedestrian | Click the person or choose Meet a resident |
 | Visit a residential street, market or industrial yard | Homes, Markets or Works |
 | Return to the market street | V or Street view |
@@ -55,6 +58,10 @@ The Godot runtime, dependency checkout, and build outputs stay local. The projec
 
 The fixture covers **960 × 640 metres**. Housing demand funds construction and unlocks expansion toward six district sites. The planner reserves through corridors, connects district centers and fills neighboring blocks. On developed central parcels, redevelopment increases height and housing capacity. Additional capacity becomes available when construction finishes.
 
+New streets open in stages. A roller follows the roadbed as pavement, shoulders and markings extend toward the next junction. Bridges advance across the river on piers and girders. Cars, freight and pedestrians can use the connection from its opening tick. Foundations, exposed floor slabs and cranes precede finished facades. Redevelopment dismantles the existing building before the new frame goes up. The founding settlement is already occupied when play begins. At 10× a local street takes 12 seconds and a building takes 36 seconds. At 1000× the same projects finish in 0.12 and 0.36 seconds.
+
+To watch the first street and its adjacent house from groundbreaking, launch with `-- --seed=147 --at=720 --site-road=23 --speed=10`. Press G to switch to following active sites.
+
 Every resident has a persistent address. Finished housing admits new residents, and shops and industrial workplaces hire up to their job capacity. Residents seeking work are matched against openings with a preference for nearby workplaces. Occupied housing and employment demand also influence new construction.
 
 With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies. Workers walk to assigned workplaces, visit nearby shops for lunch, return to work and walk home. Other residents run daytime errands from home. Building occupancy and the activity counters follow those individual schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
@@ -89,7 +96,7 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 | --- | --- |
 | `geo/` | Terrain height, water level relative to local ground, and fixture street coordinates in metres. The analytical fixture supplies the same surface to planning and rendering. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Version 4 checkpoints contain the seed, tick, and a state checksum which includes resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Version 5 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 

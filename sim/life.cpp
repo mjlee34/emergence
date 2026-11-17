@@ -133,6 +133,8 @@ Footpath connect(const City &city, int origin, int target) {
       }
       for (int e : city.nodes()[n].edges) {
         const auto &r = roads[e];
+        if (r.opens > city.tick())
+          continue;
         int next = n == r.a ? r.b : r.a;
         double alt = d + r.lengths.back();
         if (alt < cost[next]) {

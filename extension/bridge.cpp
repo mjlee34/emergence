@@ -257,6 +257,8 @@ public:
     d["class"] = int(r.type);
     d["width"] = city::road_width(r.type);
     d["bridge"] = r.bridge;
+    d["started"] = r.started;
+    d["opens"] = r.opens;
     return d;
   }
   Dictionary lot(int index) const {
@@ -286,6 +288,7 @@ public:
     }
     d["floors"] = b.floors;
     d["started"] = b.started;
+    d["previous_floors"] = b.previous_floors;
     return d;
   }
   PackedVector4Array traffic(double fraction) const {

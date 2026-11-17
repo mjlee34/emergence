@@ -68,9 +68,37 @@ void check_market() {
   }
   CHECK(spending == retail_price * e.sales() && wages == payroll && wages > 0);
 }
+void check_construction() {
+  city::City city(147);
+  for (const auto &street : city.roads())
+    CHECK(street.opens == 0);
+  const int id = city.roads().size();
+  while (int(city.roads().size()) == id && city.tick() < 10000)
+    city.advance(1);
+  auto street = city.roads().at(id);
+  CHECK(street.started == city.tick() && street.opens > street.started);
+  while (city.tick() < street.opens) {
+    auto route = city.road_route(street.a, street.b);
+    CHECK(std::find(route.begin(), route.end(), id) == route.end());
+    for (const auto &car : city.vehicles()) {
+      CHECK(city.roads()[car.edge].opens <= city.tick());
+      for (int edge : car.route)
+        CHECK(city.roads()[edge].opens <= city.tick());
+    }
+    for (const auto &shipment : city.economy().shipments())
+      for (const auto &leg : shipment.route)
+        CHECK(city.roads()[leg.edge].opens <= shipment.ordered);
+    city.advance(1);
+  }
+  CHECK(city.road_route(street.a, street.b) == std::vector<int>{id});
+  CHECK(city.events().back().tick == street.opens);
+  CHECK(city.events().back().text == "Street opened to traffic");
+}
+
 int main() {
   using namespace city;
   check_market();
+  check_construction();
   auto start = std::chrono::steady_clock::now();
   for (auto seed : {147u, 42u, 2026u}) {
     City a(seed), b(seed);

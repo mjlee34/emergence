@@ -1,4 +1,5 @@
 extends Control
+signal construction_requested
 signal freight_requested
 signal counter_requested
 signal speed_selected(value: int)
@@ -7,6 +8,7 @@ signal street_requested
 signal meet_requested
 signal district_requested(use:int)
 var district_title:=""
+var construction_note:=""
 var journey:=PackedVector2Array()
 var last_leg:=Vector2i(-1,-1)
 const IVORY=Color("#f6efdb")
@@ -41,6 +43,7 @@ var reset_button:=Button.new()
 var map_button:=Button.new()
 var map_open:=true
 var street_button:=Button.new()
+var works_button:=Button.new()
 var meet_button:=Button.new()
 var life_panel:=PanelContainer.new()
 var occupancy:=Label.new()
@@ -51,6 +54,8 @@ var land_uses:=PackedInt32Array()
 const USE_COLORS=[Color("#acd49e"),Color("#f5c076"),Color("#b6a3d9")]
 var map_paths:Array[PackedVector2Array]=[]
 var map_ranks:=PackedInt32Array()
+var map_starts:=PackedInt32Array()
+var map_opens:=PackedInt32Array()
 var river:=PackedVector2Array()
 const ROUTE_COLORS=[Color("#a6b5a3"),Color("#7dd4c7"),Color("#f6b95d")]
 
@@ -89,6 +94,11 @@ func _ready() -> void:
 	_style_button(street_button,false)
 	add_child(street_button)
 	street_button.pressed.connect(func(): street_requested.emit())
+	works_button.text="Construction"
+	works_button.tooltip_text="Follow active road and building sites (G)"
+	_style_button(works_button,false)
+	add_child(works_button)
+	works_button.pressed.connect(func(): construction_requested.emit())
 	life_panel.add_theme_stylebox_override("panel",_box(Color("#182c29f5"),8,Color("#62756a"),1))
 	add_child(life_panel)
 	var info:=VBoxContainer.new()
@@ -220,6 +230,7 @@ func _layout() -> void:
 	reset_button.position=Vector2(size.x-reset_button.get_combined_minimum_size().x-35,66)
 	map_button.position=Vector2(reset_button.position.x-map_button.get_combined_minimum_size().x-7,66)
 	street_button.position=Vector2(map_button.position.x-street_button.get_combined_minimum_size().x-7,66)
+	works_button.position=Vector2(street_button.position.x-works_button.get_combined_minimum_size().x-7,66)
 	life_panel.position=Vector2(34,size.y-345)
 	ledger.position=Vector2(size.x-35-ledger.get_combined_minimum_size().x,332 if map_open else 112)
 	queue_redraw()
@@ -229,6 +240,7 @@ func show_life(data:Dictionary,resident:Dictionary,model) -> void:
 	if resident.is_empty():
 		identity.text="Street life" if district_title=="" else district_title
 		routine_label.text="Click a person to follow their day.\n%s employed  ·  %s jobs open" % [grouped(data.employed),grouped(data.jobs-data.employed)]
+		if construction_note!="": routine_label.text=construction_note
 		journey.clear()
 		last_leg=Vector2i(-1,-1)
 	else:
@@ -354,6 +366,8 @@ func sync_map(sim,count:int,buildings:int) -> void:
 		for p in data.path: line.append(Vector2(p.x,p.z))
 		map_paths.append(line)
 		map_ranks.append(data["class"])
+		map_starts.append(data.started)
+		map_opens.append(data.opens)
 	queue_redraw()
 
 func _draw_plan() -> void:
@@ -372,8 +386,16 @@ func _draw_plan() -> void:
 	draw_set_transform(origin,0,Vector2.ONE*scale_factor)
 	for rank in 3:
 		for i in map_paths.size():
-			if map_ranks[i]==rank:
-				draw_polyline(map_paths[i],ROUTE_COLORS[rank],[.75,1.15,2.0][rank]/scale_factor,true)
+			if map_ranks[i]!=rank: continue
+			var path:=map_paths[i]
+			if state.tick<map_opens[i]:
+				var front:=smoothstep(map_starts[i],map_opens[i],state.tick)*(path.size()-1)
+				var k:=mini(int(front),path.size()-2)
+				var line:=path.slice(0,k+1)
+				line.append(path[k].lerp(path[k+1],front-k))
+				draw_polyline(line,GOLD,1.6/scale_factor,true)
+				draw_circle(line[-1],2.8/scale_factor,GOLD)
+			else: draw_polyline(path,ROUTE_COLORS[rank],[.75,1.15,2.0][rank]/scale_factor,true)
 	for i in land_dots.size():
 		draw_circle(land_dots[i],clampf(3.5*scale_factor,1.1,2.7)/scale_factor,USE_COLORS[land_uses[i]])
 	if journey.size()>1:

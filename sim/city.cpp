@@ -92,7 +92,10 @@ City::City(uint32_t seed) : seed_(seed), random_(seed) {
 void City::spawn_vehicle() {
   Vehicle v{};
   v.speed = .75 + (draw() % 60) * .01;
-  dispatch(v, draw() % nodes_.size());
+  int start = draw() % nodes_.size();
+  while (!connected(start))
+    start = (start + 1) % nodes_.size();
+  dispatch(v, start);
   v.along = roads_[v.edge].lengths.back() * (draw() % 98) / 100.;
   vehicles_.push_back(std::move(v));
 }
@@ -120,8 +123,13 @@ int City::add_road(int a, int c, int r) {
       road.lengths[i] =
           road.lengths[i - 1] + distance(road.path[i], road.path[i - 1]);
   }
+  const int duration = road.bridge ? 1200 : 480 + 120 * int(road.type);
+  road.started = tick_ ? tick_ : -duration;
+  road.opens = road.started + duration;
   int e = roads_.size();
   roads_.push_back(road);
+  if (tick_)
+    road_openings_.emplace(road.opens, e);
   nodes_[a].edges.push_back(e);
   nodes_[b].edges.push_back(e);
   return e;
@@ -141,6 +149,8 @@ bool City::grow() {
     }
   for (int i = 0; i < int(nodes_.size()); ++i) {
     const auto &n = nodes_[i];
+    if (!connected(i))
+      continue;
     for (auto [dc, dr] : std::array<std::pair<int, int>, 4>{
              {{1, 0}, {0, 1}, {-1, 0}, {0, -1}}}) {
       int c = n.col + dc, r = n.row + dr;
@@ -215,10 +225,10 @@ bool City::grow() {
     if (!viable)
       continue;
     int edge = add_road(candidate.origin, candidate.col, candidate.row);
-    record(roads_[edge].bridge            ? "River crossing extended"
-           : type == RoadClass::Arterial  ? "Boulevard extended"
-           : type == RoadClass::Collector ? "Collector opened"
-                                          : "Local street opened");
+    record(roads_[edge].bridge            ? "Bridge construction began"
+           : type == RoadClass::Arterial  ? "Boulevard construction began"
+           : type == RoadClass::Collector ? "Collector construction began"
+                                          : "Street construction began");
     return true;
   }
   return false;
@@ -342,16 +352,24 @@ bool City::redevelop() {
   auto &b = buildings_[chosen];
   int floors = target_floors(b);
   int gain = b.use == Use::Housing ? 17 * (floors - b.floors) : 0;
+  b.previous_floors = b.floors;
   b.floors = floors;
   b.capacity += gain;
   b.started = tick_;
   completions_.push_back({tick_ + build_time, chosen, gain});
   renewals_.push_back(chosen);
-  record("Downtown block redeveloped");
+  record("Downtown reconstruction began");
   return true;
+}
+bool City::connected(int node) const {
+  const auto &edges = nodes_[node].edges;
+  return std::any_of(edges.begin(), edges.end(),
+                     [&](int e) { return roads_[e].opens <= tick_; });
 }
 void City::dispatch(Vehicle &v, int start) {
   int target = (start + 1 + draw() % (nodes_.size() - 1)) % nodes_.size();
+  while (target == start || !connected(target))
+    target = (target + 1) % nodes_.size();
   v.route = road_route(start, target);
   v.destination = target;
   v.edge = v.route.back();
@@ -376,6 +394,8 @@ std::vector<int> City::road_route(int start, int target) const {
       continue;
     for (int e : nodes_[n].edges) {
       const auto &road = roads_[e];
+      if (road.opens > tick_)
+        continue;
       int next = road.a == n ? road.b : road.a;
       double arrival = elapsed + road.lengths.back() / speed_factor(road.type);
       if (arrival >= cost[next])
@@ -386,6 +406,8 @@ std::vector<int> City::road_route(int start, int target) const {
     }
   }
   std::vector<int> edges;
+  if (via[target] < 0)
+    return edges;
   for (int n = target; n != start;) {
     int e = via[n];
     edges.push_back(e);
@@ -418,11 +440,20 @@ Point City::vehicle_position(const Vehicle &v, double &yaw,
 void City::advance(int ticks) {
   for (int i = 0; i < ticks; ++i) {
     ++tick_;
+    while (!road_openings_.empty() && road_openings_.begin()->first == tick_) {
+      const auto &road = roads_[road_openings_.begin()->second];
+      record(road.bridge ? "River bridge opened to traffic" : "Street opened to traffic");
+      road_openings_.erase(road_openings_.begin());
+    }
     while (!completions_.empty() && completions_.front().tick <= tick_) {
       auto project = completions_.front();
       capacity_ += project.beds;
       life_.open(*this, project.lot, project.beds);
       economy_.open(*this, project.lot);
+      auto use = buildings_[project.lot].use;
+      record(use == Use::Housing ? "Homes ready for occupancy"
+             : use == Use::Shops ? "Shop opened for business"
+                                 : "Workshop opened for production");
       completions_.pop_front();
     }
     const int plan = tick_ / planning_interval;
@@ -492,12 +523,15 @@ uint64_t City::digest() const {
   for (const auto &r : roads_) {
     mix(r.a);
     mix(r.b);
+    mix(r.started);
+    mix(r.opens);
   }
   for (const auto &b : buildings_) {
     mix(std::bit_cast<uint64_t>(b.pos.x));
     mix(std::bit_cast<uint64_t>(b.pos.z));
     mix(b.style);
     mix(b.started);
+    mix(b.previous_floors);
     mix(b.floors);
     mix(b.capacity);
   }

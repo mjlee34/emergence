@@ -1,4 +1,5 @@
 extends Node3D
+const BuildingWorks=preload("res://scripts/building_works.gd")
 const Forms=preload("res://scripts/forms.gd")
 const COATS=["#935d50","#546877","#ac9361","#596c59","#b6afa0","#6b535e","#597478","#886c57"]
 var groups:Array[MultiMesh]=[]
@@ -142,7 +143,7 @@ func _in_sight(camera:Camera3D,target:Vector3,sites:Array[MeshInstance3D]) -> bo
 	var depth:=start.distance_to(target)
 	for site in sites:
 		var inverse:=site.global_transform.affine_inverse()
-		var hit=site.get_aabb().intersects_ray(inverse*start,inverse.basis*dir)
+		var hit=BuildingWorks.visible_bounds(site).intersects_ray(inverse*start,inverse.basis*dir)
 		if hit!=null and start.distance_to(site.global_transform*hit)<depth-.5:
 			return false
 	return true

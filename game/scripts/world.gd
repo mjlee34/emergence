@@ -1,4 +1,5 @@
 extends Node3D
+const BuildingWorks=preload("res://scripts/building_works.gd")
 const Landscape=preload("res://scripts/landscape.gd")
 const Town=preload("res://scripts/town.gd")
 const Orbit=preload("res://scripts/orbit.gd")
@@ -28,6 +29,9 @@ var atmosphere:=Environment.new()
 var remainder:=0.
 var state:Dictionary
 var capture_path:=""
+var watching_construction:=false
+var construction_target:=Vector2i(-1,-1) # x=0 for streets, x=1 for lots
+var fixed_site:=Vector2i(-1,-1)
 var capture_tick:=0
 var capture_detail:=false
 var atlas:=false
@@ -42,6 +46,8 @@ func _ready() -> void:
 		if arg.begins_with("--seed="): seed_value=int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--capture="): capture_path=arg.trim_prefix("--capture=")
 		if arg.begins_with("--at="): capture_tick=maxi(0,int(arg.trim_prefix("--at=")))
+		if arg.begins_with("--site-road="): fixed_site=Vector2i(0,int(arg.trim_prefix("--site-road=")))
+		if arg.begins_with("--site-lot="): fixed_site=Vector2i(1,int(arg.trim_prefix("--site-lot=")))
 		if arg=="--no-hud": hud.visible=false
 		if arg=="--freight": capture_freight=true
 		if arg.begins_with("--counter="): capture_counter=int(arg.trim_prefix("--counter="))
@@ -86,6 +92,7 @@ func _ready() -> void:
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
 	hud.meet_requested.connect(_meet)
+	hud.construction_requested.connect(_toggle_construction)
 	hud.freight_requested.connect(_follow_delivery)
 	hud.counter_requested.connect(_view_business)
 	hud.district_requested.connect(_district_view)
@@ -102,6 +109,8 @@ func _ready() -> void:
 	if meet_capture: _meet()
 	if capture_resident>=0 and capture_resident<state.population: _watch(capture_resident)
 	_sync()
+	if fixed_site.y>=0 and ((fixed_site.x==0 and fixed_site.y<state.roads) or (fixed_site.x==1 and fixed_site.y<state.buildings)):
+		_frame_work(fixed_site,1.)
 	if capture_path!="": _capture.call_deferred()
 
 func _lighting() -> void:
@@ -152,6 +161,7 @@ func _process(delta:float) -> void:
 		state=model.summary()
 	orbit.frame_city(state.bounds,1.-exp(-delta*1.8))
 	_sync()
+	if watching_construction: _follow_works(1.-exp(-delta*3.))
 
 func _sync() -> void:
 	var info:Dictionary={}
@@ -192,7 +202,88 @@ func _sync() -> void:
 	atmosphere.ambient_light_color=Color("#cbd5df")
 	atmosphere.ambient_light_energy=lerpf(.20,.58,daylight)
 
+func _toggle_construction() -> void:
+	watching_construction=not watching_construction
+	construction_target=Vector2i(-1,-1)
+	hud.works_button.text="Leave site" if watching_construction else "Construction"
+	if watching_construction:
+		following_van=-1
+		selected=-1
+		watching=false
+		orbit.following=false
+		_follow_works(0.)
+	else:
+		hud.district_title=""
+		hud.construction_note=""
+
+func _leave_site() -> void:
+	if watching_construction: _toggle_construction()
+
+func _follow_works(weight:float) -> void:
+	var active:Dictionary=town.roadworks if construction_target.x==0 else town.construction
+	if not active.has(construction_target.y):
+		var best:=INF
+		construction_target=Vector2i(-1,-1)
+		for kind in 2:
+			var projects:Dictionary=town.roadworks if kind==0 else town.construction
+			for id in projects:
+				var pos:Vector3=projects[id].data.path[4] if kind==0 else projects[id].position
+				var d:=pos.distance_squared_to(orbit.pivot)
+				if d<best:
+					best=d
+					construction_target=Vector2i(kind,id)
+	if construction_target.y<0:
+		hud.district_title="Waiting for construction"
+		hud.construction_note="Watching for the next project.\nUse 10× or 100× to advance time."
+		return
+	_frame_work(construction_target,weight)
+	var id:=construction_target.y
+	var stage:String
+	var ends:int
+	if construction_target.x==0:
+		var site=town.roadworks[id]
+		ends=site.data.opens
+		stage="Setting out" if site.progress<.12 else ("Extending bridge deck" if site.data.bridge else "Laying pavement")
+		if site.progress>.84: stage="Finishing approaches"
+	else:
+		var site=town.construction[id]
+		ends=site.started+state.construction_ticks
+		stage="Preparing foundations"
+		if is_instance_valid(site.old) and site.progress<.23: stage="Dismantling old building"
+		elif site.progress>.88: stage="Finishing the site"
+		elif site.progress>.57: stage="Closing the facade"
+		elif site.progress>.23: stage="Raising the frame"
+	var remaining:=ceili((ends-state.tick-remainder)/4.)
+	hud.construction_note="%s\n%d city minutes to completion" % [stage,remaining]
+
+func _frame_work(target:Vector2i,weight:float) -> void:
+	var pos:Vector3
+	var angle:float
+	var span:float
+	if target.x==0:
+		var road:Dictionary=model.street(target.y)
+		var path:PackedVector3Array=road.path
+		pos=path[4]+Vector3.UP*1.6
+		var axis:=path[-1]-path[0]
+		angle=atan2(axis.x,axis.z)+1.24
+		span=clampf(axis.length()*.72,30.,90.)
+		hud.district_title="Bridge works" if road.bridge else "Road works"
+	else:
+		var lot:Dictionary=model.lot(target.y)
+		var height:float=town.sites[target.y].get_aabb().end.y
+		pos=lot.pos+Vector3.UP*(height*.40+1.)
+		angle=_front_angle(target.y)
+		span=clampf(height*1.40+14.,25.,92.)
+		hud.district_title="Redevelopment" if lot.previous_floors else "Building site"
+	orbit.following=false
+	orbit.pivot=orbit.pivot.lerp(pos,weight)
+	orbit.azimuth=lerp_angle(orbit.azimuth,angle,weight)
+	orbit.elevation=lerpf(orbit.elevation,.61,weight)
+	orbit.extent=lerpf(orbit.extent,span,weight)
+	orbit.update_view()
+
 func _follow_delivery() -> void:
+	_leave_site()
 	if manifests.is_empty(): return
 	var chosen:Dictionary=manifests[0]
 	for order in manifests:
@@ -218,6 +309,7 @@ func _front_angle(id:int) -> float:
 	return b.yaw+(.0 if b.front_sign>0 else PI)+.55
 
 func _view_business() -> void:
+	_leave_site()
 	following_van=-1
 	if business_id<0: return
 	var b:Dictionary=model.lot(business_id)
@@ -233,6 +325,7 @@ func _view_business() -> void:
 	hud.district_title="Market district" if b.use==1 else "Workshop district"
 
 func _fit_city() -> void:
+	_leave_site()
 	following_van=-1
 	watching=false
 	selected=-1
@@ -242,6 +335,7 @@ func _street_view() -> void:
 	_district_view(1)
 
 func _district_view(use:int) -> void:
+	_leave_site()
 	following_van=-1
 	hud.district_title=["Residential streets","Market district","Workshop district"][use]
 	watching=false
@@ -281,6 +375,7 @@ func _meet() -> void:
 	if selected>=0: _watch(selected)
 
 func _watch(id:int) -> void:
+	_leave_site()
 	following_van=-1
 	selected=id
 	watching=true
@@ -302,9 +397,11 @@ func _unhandled_input(event:InputEvent) -> void:
 					business_id=at
 					_view_business()
 	if event is InputEventMouseMotion and event.button_mask and event.position.distance_to(click_start)>4:
+		_leave_site()
 		watching=false
 		following_van=-1
-	if event is InputEventPanGesture:
+	if event is InputEventPanGesture or event is InputEventMagnifyGesture or (event is InputEventMouseButton and event.button_index in [MOUSE_BUTTON_WHEEL_UP,MOUSE_BUTTON_WHEEL_DOWN]):
+		_leave_site()
 		watching=false
 		following_van=-1
 
@@ -316,7 +413,7 @@ func _pick_business(screen:Vector2) -> int:
 	for i in town.sites.size():
 		var site:MeshInstance3D=town.sites[i]
 		var inv:=site.global_transform.affine_inverse()
-		var hit=site.get_aabb().intersects_ray(inv*start,inv.basis*dir)
+		var hit=BuildingWorks.visible_bounds(site).intersects_ray(inv*start,inv.basis*dir)
 		if hit==null: continue
 		var dist:=start.distance_squared_to(site.global_transform*hit)
 		if dist<best:
@@ -335,6 +432,7 @@ func _select_speed(value:int) -> void:
 func _input(event:InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		match event.keycode:
+			KEY_G: _toggle_construction()
 			KEY_H: _fit_city()
 			KEY_V: _street_view()
 			KEY_SPACE: _select_speed(0)

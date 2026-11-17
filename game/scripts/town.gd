@@ -1,5 +1,7 @@
 extends Node3D
 const Forms = preload("res://scripts/forms.gd")
+const Roadworks=preload("res://scripts/roadworks.gd")
+const BuildingWorks=preload("res://scripts/building_works.gd")
 const WALLS = ["#c6bdaa","#bda991","#b88874","#abb1a7","#c2af95","#a9aca2"]
 const ROOFS = ["#a17a66","#5b6770","#94705e","#777169","#ad8675","#52615f"]
 var model
@@ -15,7 +17,9 @@ var enclosed:Dictionary={}
 var paved:Dictionary={}
 var last_paving_population:=0
 var car_meshes: Array[Mesh]=[]
-var construction := {}
+var construction:Dictionary={}
+var roadworks:Dictionary={}
+var court_works:Dictionary={}
 var cars: Array[Node3D] = []
 var junction_caps:Dictionary={}
 var street_lights:=Node3D.new()
@@ -56,30 +60,46 @@ func create(sim, landscape) -> void:
 		car_meshes.append(g.mesh())
 
 func sync(state: Dictionary, fraction: float) -> void:
-	var extended:bool=roads<state.roads
+	var time:float=state.tick+fraction
+	var initial:=roads==0
+	var opened:=false
 	while roads<state.roads:
-		_street(model.street(roads))
+		var data:Dictionary=model.street(roads)
+		var pending:bool=time<data.opens
+		_street(data,pending,roads)
+		opened=opened or not pending
 		roads+=1
-	if state.population>=3200 and (extended or state.population-last_paving_population>=150):
-		_pave_blocks(state.population)
+	for id in roadworks.keys():
+		var work=roadworks[id]
+		if work.advance(time,land):
+			work.street.set_instance_shader_parameter("workfront",Vector4(0,0,0,2))
+			_open_road(work.data)
+			work.queue_free()
+			roadworks.erase(id)
+			opened=true
+	if state.population>=3200 and (opened or state.population-last_paving_population>=150):
+		_pave_blocks(state.population,time,initial)
+	for court in court_works.keys():
+		var c:Dictionary=court_works[court]
+		var p:=clampf((time-c.start)/360.,0,1)
+		var plane:Vector4=c.plane
+		plane.w=lerpf(-.12,1.15,smoothstep(0.,1.,p))
+		court.set_instance_shader_parameter("workfront",plane if p<1 else Vector4(0,0,0,2))
+		if p>=1: court_works.erase(court)
 	var changed:Dictionary={}
 	while renewals<state.renewals:
 		var index:int=model.renewed_lot(renewals)
 		if index<buildings: changed[index]=true
 		renewals+=1
-	for index in changed:
-		var old:=sites[int(index)]
-		construction.erase(old)
-		old.queue_free()
-		sites[index]=_build(model.lot(index))
+	for index in changed: _present_lot(index,state,time,true)
 	while buildings<state.buildings:
-		var lot:Dictionary=model.lot(buildings)
-		sites.append(_build(lot))
+		_present_lot(buildings,state,time,false)
 		buildings+=1
-	for site in construction.keys():
-		var t := clampf((state.tick+fraction-int(construction[site]))/float(state.construction_ticks),0.,1.)
-		site.scale.y = maxf(.035,smoothstep(0,1,t))
-		if t>=1: construction.erase(site)
+	for id in construction.keys():
+		var work=construction[id]
+		if work.advance(time,state.construction_ticks):
+			work.queue_free()
+			construction.erase(id)
 	street_lights.visible=state.minute>=1080 or state.minute<390
 	if street_lights.visible and state.tick!=last_light_tick:
 		last_light_tick=state.tick
@@ -95,6 +115,35 @@ func sync(state: Dictionary, fraction: float) -> void:
 		var p:=positions[i]
 		cars[i].position=Vector3(p.x,p.y+.31,p.z)
 		cars[i].rotation.y=p.w
+
+func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
+	var lot:Dictionary=model.lot(id)
+	var active:bool=time<lot.started+state.construction_ticks
+	var previous:MeshInstance3D
+	if replace:
+		previous=sites[id]
+		# A single fast step can cross more than one project on this parcel.
+		if construction.has(id):
+			var former=construction[id]
+			if is_instance_valid(former.old): former.old.queue_free()
+			former.queue_free()
+			construction.erase(id)
+		if not active or previous.get_meta("floors")!=lot.previous_floors:
+			previous.queue_free()
+			previous=null
+	if active and lot.previous_floors>0 and not previous:
+		var prior:=lot.duplicate()
+		prior.floors=lot.previous_floors
+		previous=_build(prior)
+	var finished:=_build(lot)
+	finished.set_meta("floors",lot.floors)
+	if replace: sites[id]=finished
+	else: sites.append(finished)
+	if active:
+		var work=BuildingWorks.new()
+		add_child(work)
+		work.setup(lot,finished,previous)
+		construction[id]=work
 
 func _ribbon(g,path: PackedVector3Array,width: float,lift: float,color: Color,offset:=0.,deck:=false) -> void:
 	var left: Array[Vector3]=[]
@@ -127,13 +176,11 @@ func _register_block_edges(data:Dictionary) -> void:
 		if horizontal.has(cell) and horizontal.has(cell+Vector2i.DOWN) and vertical.has(cell) and vertical.has(cell+Vector2i.RIGHT):
 			enclosed[cell]=true
 
-func _pave_blocks(population:int) -> void:
+func _pave_blocks(population:int,time:float,initial:bool) -> void:
 	# Closed central blocks acquire a continuous mineral surface and planted courts.
 	# The same sampled edges define the four sides, so sidewalks follow road bends.
 	last_paving_population=population
 	var built=[]
-	var g=Forms.new(true)
-	g.finish=Forms.Finish.WALK
 	for cell in enclosed:
 		var top:PackedVector3Array=horizontal[cell]
 		var bottom:PackedVector3Array=horizontal[cell+Vector2i.DOWN]
@@ -152,6 +199,7 @@ func _pave_blocks(population:int) -> void:
 				p+=(left[j]-top[0].lerp(bottom[0],v))*(1.-u)+(right[j]-top[8].lerp(bottom[8],v))*u
 				p.y=model.height_at(p.x,p.z)+.14
 				grid.append(p)
+		var g=Forms.new(true)
 		var brick:=Color("#b7ac95") if (cell.x+cell.y)%3==0 else Color("#a8a797")
 		if industrial: brick=Color("#969c92")
 		for j in 8:
@@ -161,41 +209,36 @@ func _pave_blocks(population:int) -> void:
 				g.finish=Forms.Finish.MEADOW if planted else Forms.Finish.WALK
 				var tint:=Color("#899a70") if planted else brick
 				g.quad(grid[k],grid[k+1],grid[k+10],grid[k+9],tint,Vector3.UP)
+		var court_mesh=g.attach(self)
+		if not initial:
+			var axis:=Vector2(bottom[4].x-top[4].x,bottom[4].z-top[4].z)
+			axis/=axis.length_squared()
+			court_works[court_mesh]={"start":time,"plane":Vector4(axis.x,axis.y,-axis.dot(Vector2(top[4].x,top[4].z)),0)}
 		built.append(cell)
-	if not built.is_empty(): g.attach(self)
 	for cell in built:
 		paved[cell]=true
 		enclosed.erase(cell)
 
-func _street(data: Dictionary) -> void:
-	_register_block_edges(data)
+func _street(data:Dictionary,pending:bool,id:int) -> void:
+	var fixtures:Array=[]
 	var g=Forms.new(true)
 	var path:PackedVector3Array=data.path
 	var width:float=data.width
 	var rank:int=data["class"]
 	var deck:bool=data.bridge
 	var asphalt:=Color(["#888c7f","#606d6c","#414f53"][rank])
-	land.clear_street(path,width*.5+2.8)
+	if pending:
+		# Compacted aggregate stays just ahead of the paving front.
+		_ribbon(g,path,width+1.,.31,Color("#927c61") if not deck else Color("#767b77"),0,deck)
+	else:
+		for k in range(path.size()-1): land.clear_street(path.slice(k,k+2),width*.5+2.8)
+	g.construction_lag=.09
 	g.finish=Forms.Finish.WALK
 	_ribbon(g,path,width+1.6+rank*.7,.385,Color("#c4bba4"),0,deck)
+	g.construction_lag=.17
 	g.finish=Forms.Finish.ROAD
 	_ribbon(g,path,width,.405,asphalt,0,deck)
-	for end_index in [0,1]:
-		var key:Vector2i=data.a if end_index==0 else data.b
-		var center:Vector3=path[0] if end_index==0 else path[-1]
-		if not junction_caps.has(key) or junction_caps[key].rank<rank:
-			if junction_caps.has(key): junction_caps[key].node.queue_free()
-			var cap=Forms.new(true)
-			cap.finish=Forms.Finish.ROAD
-			var radius:=width*.54+.24
-			center.y=model.height_at(center.x,center.z)+.437
-			for i in range(20):
-				var a:=center+Vector3(cos(TAU*i/20.),0,sin(TAU*i/20.))*radius
-				var b:=center+Vector3(cos(TAU*(i+1)/20.),0,sin(TAU*(i+1)/20.))*radius
-				a.y=model.height_at(a.x,a.z)+.437
-				b.y=model.height_at(b.x,b.z)+.437
-				cap.triangle(center,a,b,asphalt,Vector3.UP)
-			junction_caps[key]={"rank":rank,"node":cap.attach(self)}
+	g.construction_lag=.24
 	g.finish=Forms.Finish.PLAIN
 	var interior:=path.slice(1,8)
 	if rank>0 and not deck:
@@ -215,7 +258,7 @@ func _street(data: Dictionary) -> void:
 		g.finish=Forms.Finish.PLAIN
 		if not deck:
 			for i in [2,6]:
-				_street_tree(path[i]+Vector3.UP*.42)
+				fixtures.append({"at":i/8.,"node":_street_tree(path[i]+Vector3.UP*.42)})
 	if rank>0:
 		for i in range(1,7,2):
 			var dash:=PackedVector3Array([path[i],path[i].lerp(path[i+1],.75)])
@@ -245,6 +288,7 @@ func _street(data: Dictionary) -> void:
 		bulb.distance_fade_begin=130
 		bulb.distance_fade_length=65
 		street_lights.add_child(bulb)
+		fixtures.append({"at":.5,"node":bulb})
 	if deck:
 		for side in [-1,1]:
 			_ribbon(g,path,.55,1.28,Color("#c8c2a9"),side*(width*.5+.65),true)
@@ -252,21 +296,61 @@ func _street(data: Dictionary) -> void:
 				var dir:Vector3=(path[mini(i+1,8)]-path[maxi(i-1,0)]).normalized()
 				var p:Vector3=path[i]+Vector3(-dir.z,0,dir.x)*side*(width*.5+.65)
 				g.box(p+Vector3.UP*.83,Vector3(.5,1,.5),Color("#948f79"))
+		g.construction_lag=0.
+		# Longitudinal steel and concrete fascia give the advancing deck a section.
+		for side in [-1,1]:
+			for i in range(path.size()-1):
+				var dir:Vector3=(path[i+1]-path[i]).normalized()
+				var sideward:Vector3=Vector3(-dir.z,0,dir.x)*side
+				var edge:Vector3=sideward*(width*.5+.55)+Vector3.UP*.05
+				g.beam(path[i]+edge,path[i+1]+edge,.57,Color("#a49d91"))
+				var girder:Vector3=sideward*width*.33-Vector3.UP*.40
+				g.beam(path[i]+girder,path[i+1]+girder,.65,Color("#575f5b"))
 		for i in [2,4,6]:
 			var p:=path[i]
 			var h:float=p.y-model.height_at(p.x,p.z)
 			for side in [-1,1]:
 				g.taper(p+Vector3(0,-h-.6,side*4),.85,.68,h+.7,8,Color("#a59a83"))
-	g.attach(self)
+	var street=g.attach(self)
+	if pending:
+		var work=Roadworks.new()
+		add_child(work)
+		work.setup(data,street,fixtures)
+		roadworks[id]=work
+	else: _open_road(data)
+
+func _open_road(data:Dictionary) -> void:
+	_register_block_edges(data)
+	var path:PackedVector3Array=data.path
+	var width:float=data.width
+	var rank:int=data["class"]
+	var asphalt:=Color(["#888c7f","#606d6c","#414f53"][rank])
+	for end_index in [0,1]:
+		var key:Vector2i=data.a if end_index==0 else data.b
+		var center:Vector3=path[0] if end_index==0 else path[-1]
+		if not junction_caps.has(key) or junction_caps[key].rank<rank:
+			if junction_caps.has(key): junction_caps[key].node.queue_free()
+			var cap=Forms.new(true)
+			cap.finish=Forms.Finish.ROAD
+			var radius:=width*.54+.24
+			center.y=model.height_at(center.x,center.z)+.437
+			for i in range(20):
+				var a:=center+Vector3(cos(TAU*i/20.),0,sin(TAU*i/20.))*radius
+				var b:=center+Vector3(cos(TAU*(i+1)/20.),0,sin(TAU*(i+1)/20.))*radius
+				a.y=model.height_at(a.x,a.z)+.437
+				b.y=model.height_at(b.x,b.z)+.437
+				cap.triangle(center,a,b,asphalt,Vector3.UP)
+			junction_caps[key]={"rank":rank,"node":cap.attach(self)}
 
 var street_crown:Mesh
-func _street_tree(at:Vector3) -> void:
+func _street_tree(at:Vector3) -> MeshInstance3D:
 	if not street_crown:
 		street_crown=preload("res://scripts/landscape.gd").crown_mesh(preload("res://art/deciduous.png"),4.4)
 	var tree:=MeshInstance3D.new()
 	tree.mesh=street_crown
 	tree.position=at
 	add_child(tree)
+	return tree
 
 func _build(lot: Dictionary) -> MeshInstance3D:
 	var s:int=lot.style
@@ -377,7 +461,6 @@ func _build(lot: Dictionary) -> MeshInstance3D:
 			parked.rotation.y=PI*.5
 			site.add_child(parked)
 	land.clear_lot(lot.pos)
-	if lot.started>=0: construction[site]=lot.started
 	return site
 
 func _home_front(g,lot:Dictionary,w:float,d:float) -> void:
@@ -520,7 +603,6 @@ func _urban_block(lot:Dictionary,w:float,d:float) -> MeshInstance3D:
 	site.rotation.y=lot.yaw
 	_add_shop_sign(site,lot,d)
 	land.clear_lot(lot.pos)
-	if lot.started>=0: construction[site]=lot.started
 	return site
 
 
