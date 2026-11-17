@@ -1,4 +1,6 @@
 extends Control
+signal freight_requested
+signal counter_requested
 signal speed_selected(value: int)
 signal home_requested
 signal street_requested
@@ -20,6 +22,16 @@ var scrim:=GradientTexture2D.new()
 var state:Dictionary={}
 var buttons:Array[Button]=[]
 var dock:=PanelContainer.new()
+var ledger:=PanelContainer.new()
+var business_name:=Label.new()
+var trade_line:=Label.new()
+var accounts:=Label.new()
+var trading:=Label.new()
+var freight_line:=PackedVector2Array()
+var freight_id:=-1
+var freight_point:=Vector2.ZERO
+var follow_van:=Button.new()
+var counter:=Button.new()
 var live:Label
 var population:Label
 var day:Label
@@ -101,6 +113,30 @@ func _ready() -> void:
 	_style_button(meet_button,false)
 	info.add_child(meet_button)
 	meet_button.pressed.connect(func(): meet_requested.emit())
+	ledger.add_theme_stylebox_override("panel",_box(Color("#193b36f5"),8,Color("#64796a"),1))
+	add_child(ledger)
+	var sheet:=VBoxContainer.new()
+	ledger.add_child(sheet)
+	sheet.add_theme_constant_override("separation",5)
+	_font(trading,sans,12,GOLD)
+	trading.text="LOCAL TRADE"
+	sheet.add_child(trading)
+	_font(business_name,serif,25,IVORY)
+	sheet.add_child(business_name)
+	_font(trade_line,sans,16,IVORY)
+	sheet.add_child(trade_line)
+	_font(accounts,sans,14,MUTED)
+	sheet.add_child(accounts)
+	var actions:=HBoxContainer.new()
+	sheet.add_child(actions)
+	counter.text="View counter"
+	_style_button(counter,false)
+	actions.add_child(counter)
+	counter.pressed.connect(func(): counter_requested.emit())
+	follow_van.text="Follow delivery"
+	_style_button(follow_van,false)
+	actions.add_child(follow_van)
+	follow_van.pressed.connect(func(): freight_requested.emit())
 	dock.add_theme_stylebox_override("panel",_box(INK.darkened(.16),10,Color("#587066"),1))
 	add_child(dock)
 	var row:=HBoxContainer.new()
@@ -185,6 +221,7 @@ func _layout() -> void:
 	map_button.position=Vector2(reset_button.position.x-map_button.get_combined_minimum_size().x-7,66)
 	street_button.position=Vector2(map_button.position.x-street_button.get_combined_minimum_size().x-7,66)
 	life_panel.position=Vector2(34,size.y-345)
+	ledger.position=Vector2(size.x-35-ledger.get_combined_minimum_size().x,332 if map_open else 112)
 	queue_redraw()
 
 func show_life(data:Dictionary,resident:Dictionary,model) -> void:
@@ -204,6 +241,9 @@ func show_life(data:Dictionary,resident:Dictionary,model) -> void:
 		if resident.work>=0:
 			workplace="%s  (%s–%s)"%[_address(model,resident.work),_time(resident.shift),_time(resident.finish)]
 		routine_label.text="%s %s\nHome   %s\nWork    %s"%[activity,_address(model,resident.target),_address(model,resident.home),workplace]
+		routine_label.text+="\nWallet   $%s   ·   $%s earned"%[grouped(resident.wallet),grouped(resident.wages)]
+		if resident.receipt>=0:
+			routine_label.text+="\nLast purchase   $12 at %s"%_address(model,resident.store)
 		var leg:=Vector2i(resident.id,resident.target)
 		if last_leg!=leg:
 			last_leg=leg
@@ -211,13 +251,48 @@ func show_life(data:Dictionary,resident:Dictionary,model) -> void:
 			queue_redraw()
 	life_panel.reset_size()
 
+func show_trade(model,b:Dictionary,order:Dictionary,total:int,tick:int) -> void:
+	if b.is_empty(): return
+	var name_of_goods:String=["Provisions","Garments"][b.goods]
+	business_name.text=_address(model,b.id)
+	counter.text="View counter" if int(model.lot(b.id).use)==1 else "View yard"
+	follow_van.disabled=total==0
+	if order.is_empty():
+		if freight_id>=0:
+			freight_id=-1
+			freight_line.clear()
+			queue_redraw()
+		trading.text="LOCAL TRADE"
+		var working:bool=int(model.lot(b.id).use)==2
+		var status:String
+		if working: status="%s packed"%grouped(b.made)
+		elif b.stock==0: status="Sold out"
+		else: status="%s sold"%grouped(b.sold)
+		trade_line.text="%s  ·  %s"%[name_of_goods,status]
+		accounts.text="%s on hand   ·   %s on shift\nTill  $%s    Payroll  $%s"%[grouped(b.stock),b.staff,grouped(b.cash),grouped(b.wages)]
+		if b.pending: accounts.text+="\nIncoming order   %d units"%b.pending
+		elif b.last_sale>=0: accounts.text+="\nLast sale   $12 at %s"%_time((465+b.last_sale/4)%1440)
+		if b.missed: accounts.text+="\n%s purchases unfilled"%grouped(b.missed)
+	else:
+		if freight_id!=order.id:
+			freight_id=order.id
+			freight_line=model.delivery_route(order.id)
+		freight_point=Vector2(order.position.x,order.position.z)
+		queue_redraw()
+		var phase:String="Loading" if tick<order.start+20 else ("Unloading" if tick>=order.arrival else "In transit")
+		trading.text="DELIVERY %03d   ·   %s"%[order.id,phase.to_upper()]
+		trade_line.text="%s  →  %s"%[_address(model,order.source),_address(model,order.shop)]
+		accounts.text="%d %s   ·   $%d wholesale\nShop stock   %d now  +  %d on order"%[order.units,name_of_goods.to_lower(),order.units*6,b.stock,b.pending]
+	ledger.reset_size()
+	ledger.position=Vector2(size.x-35-ledger.size.x,332 if map_open else 112)
+
 func _address(model,id:int) -> String:
 	var b:Dictionary=model.lot(id)
 	var title: String
 	match int(b.use):
 		0: title="Residence"
-		1: title=["Bakery","Corner café","Grocer","Bookshop"][b.style%4]
-		_: title=["Foundry","Joinery","Printworks","Textile mill"][b.style%4]
+		1: title=["Bakery","Corner café","Grocer","Outfitter"][b.style%4]
+		_: title=["Flour mill","Food co-op","Creamery","Textile mill"][b.style%4]
 	return "%s %02d"%[title,id+1]
 
 func _time(minute:int) -> String:
@@ -305,6 +380,9 @@ func _draw_plan() -> void:
 		draw_polyline(journey,Color("#fff0bc"),2.2/scale_factor,true)
 		draw_circle(journey[0],3.5/scale_factor,IVORY)
 		draw_circle(journey[-1],3.5/scale_factor,GOLD)
+	if freight_line.size()>1:
+		draw_polyline(freight_line,Color("#faad67"),2.5/scale_factor,true)
+		draw_circle(freight_point,4.2/scale_factor,IVORY)
 	draw_set_transform(Vector2.ZERO)
 	var y:=panel.end.y-28
 	var x:=panel.position.x+12

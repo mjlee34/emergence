@@ -25,6 +25,10 @@ protected:
                          &CityModel::resident);
     ClassDB::bind_method(D_METHOD("walking_plan", "id", "fraction"),
                          &CityModel::walking_plan);
+    ClassDB::bind_method(D_METHOD("business", "id"), &CityModel::business);
+    ClassDB::bind_method(D_METHOD("delivery_route", "id"),
+                         &CityModel::delivery_route);
+    ClassDB::bind_method(D_METHOD("freight", "fraction"), &CityModel::freight);
     ClassDB::bind_method(D_METHOD("summary"), &CityModel::summary);
     ClassDB::bind_method(D_METHOD("renewed_lot", "index"),
                          &CityModel::renewed_lot);
@@ -40,6 +44,15 @@ public:
   double river_x(double z) const { return city::river_center(z); }
   Dictionary summary() const {
     Dictionary d;
+    const auto &economy = state.economy();
+    d["stock_revision"] = economy.stock_revision();
+    d["sales"] = economy.sales();
+    d["delivered"] = economy.deliveries();
+    d["produced"] = economy.production();
+    PackedInt32Array stocks;
+    for (auto &b : economy.places())
+      stocks.push_back(b.open ? b.stock : -1);
+    d["stocks"] = stocks;
     d["tick"] = state.tick();
     int absolute = state.tick() / city::ticks_per_minute + city::opening_minute;
     d["minute"] = absolute % city::minutes_per_day;
@@ -81,6 +94,11 @@ public:
     auto activity = life.routine(id, state.tick() + fraction);
     auto pose = life.pose(state, id, activity, state.tick() + fraction);
     d["id"] = id;
+    const auto &wallet = state.economy().wallets()[id];
+    d["wallet"] = wallet.cash;
+    d["wages"] = wallet.wages;
+    d["receipt"] = wallet.receipt;
+    d["store"] = wallet.shop;
     d["variation"] = int64_t(r.variation);
     d["home"] = r.home;
     d["work"] = r.work;
@@ -111,7 +129,7 @@ public:
                            int selected) const {
     const auto &life = state.life();
     PackedVector4Array poses;
-    PackedInt32Array ids, modes;
+    PackedInt32Array ids, modes, bags;
     std::vector<int> outdoor(state.buildings().size(), 0);
     // Residents indoors remain in occupancy totals. Sample the visible street
     // crowd at city scale.
@@ -142,6 +160,12 @@ public:
       poses.push_back(Vector4(p.pos.x, p.height, p.pos.z, p.yaw));
       ids.push_back(id);
       modes.push_back(int(s.activity));
+      const auto &w = state.economy().wallets()[id];
+      bags.push_back(w.receipt >= 0 && w.shop >= 0 &&
+                     (s.activity == city::Activity::Shopping ||
+                      (walking && s.from == w.shop)) &&
+                     (state.tick() + city::opening_minute * 4) / 5760 ==
+                         (w.receipt + city::opening_minute * 4) / 5760);
     };
     if (selected >= 0 && selected < state.population())
       emit_person(selected);
@@ -152,7 +176,68 @@ public:
     d["poses"] = poses;
     d["ids"] = ids;
     d["modes"] = modes;
+    d["bags"] = bags;
     return d;
+  }
+  Dictionary business(int id) const {
+    Dictionary d;
+    const auto &places = state.economy().places();
+    if (id < 0 || id >= int(places.size()) || !places[id].open)
+      return d;
+    const auto &b = places[id];
+    d["id"] = id;
+    d["goods"] = int(b.goods);
+    d["stock"] = b.stock;
+    d["cash"] = b.cash;
+    d["sold"] = b.sold;
+    d["received"] = b.received;
+    d["pending"] = b.pending;
+    d["made"] = b.produced;
+    d["staff"] = b.staff;
+    d["wages"] = b.wages;
+    d["missed"] = b.missed;
+    d["last_sale"] = b.last_sale;
+    d["last_delivery"] = b.last_delivery;
+    d["last_batch"] = b.last_batch;
+    return d;
+  }
+  PackedVector2Array delivery_route(int id) const {
+    PackedVector2Array path;
+    for (const auto &s : state.economy().shipments()) {
+      if (s.id != id)
+        continue;
+      double time = s.ordered + 20;
+      for (auto &leg : s.route) {
+        double end = s.ordered + 20 + leg.end_time;
+        for (double t = time; t < end; t += 3.) {
+          auto p = state.economy().van(state, s, t).position;
+          path.push_back(Vector2(p.x, p.z));
+        }
+        time = end;
+      }
+      auto p = state.economy().van(state, s, s.arrival).position;
+      path.push_back(Vector2(p.x, p.z));
+      break;
+    }
+    return path;
+  }
+  Array freight(double fraction) const {
+    Array rows;
+    for (auto &s : state.economy().shipments()) {
+      Dictionary d;
+      auto p = state.economy().van(state, s, state.tick() + fraction);
+      d["id"] = s.id;
+      d["source"] = s.supplier;
+      d["shop"] = s.shop;
+      d["units"] = s.units;
+      d["start"] = s.ordered;
+      d["arrival"] = s.arrival;
+      d["end"] = s.completed;
+      d["position"] = Vector3(p.position.x, p.height + .36, p.position.z);
+      d["yaw"] = p.yaw;
+      rows.push_back(d);
+    }
+    return rows;
   }
   int renewed_lot(int index) const {
     ERR_FAIL_INDEX_V(index, int(state.renewals().size()), -1);

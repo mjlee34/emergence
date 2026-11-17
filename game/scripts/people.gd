@@ -8,6 +8,7 @@ var poses:=PackedVector4Array()
 var modes:=PackedInt32Array()
 var marker:=MeshInstance3D.new()
 var parcels:=MultiMesh.new()
+var bags:=MultiMesh.new()
 
 func _ready() -> void:
 	paint.shader=preload("res://scripts/walkers.gdshader")
@@ -47,6 +48,16 @@ func _ready() -> void:
 	var loads:=MultiMeshInstance3D.new()
 	loads.multimesh=parcels
 	add_child(loads)
+	var bag=Forms.new()
+	bag.box(Vector3.ZERO,Vector3(.30,.37,.23),Color("#d99249"))
+	for x in [-.095,.095]:
+		bag.box(Vector3(x,.23,0),Vector3(.033,.14,.04),Color("#65553d"))
+	bag.box(Vector3(0,.3,0),Vector3(.20,.04,.04),Color("#65553d"))
+	bags.transform_format=MultiMesh.TRANSFORM_3D
+	bags.mesh=bag.mesh()
+	var bag_batch:=MultiMeshInstance3D.new()
+	bag_batch.multimesh=bags
+	add_child(bag_batch)
 	var ring:=TorusMesh.new()
 	ring.inner_radius=.68
 	ring.outer_radius=.83
@@ -76,6 +87,11 @@ func sync(model,orbit,state:Dictionary,fraction:float,selected:int) -> void:
 	var carrying:=modes.count(1)
 	if parcels.instance_count<carrying: parcels.instance_count=carrying
 	parcels.visible_instance_count=carrying
+	var bag_flags:PackedInt32Array=data.bags
+	var bag_count:=bag_flags.count(1)
+	if bags.instance_count<bag_count: bags.instance_count=bag_count
+	bags.visible_instance_count=bag_count
+	var bag_index:=0
 	var load_index:=0
 	for i in ids.size():
 		var id:=ids[i]
@@ -86,6 +102,9 @@ func sync(model,orbit,state:Dictionary,fraction:float,selected:int) -> void:
 		groups[k].set_instance_transform(counts[k],transform3)
 		groups[k].set_instance_custom_data(counts[k],Color((id%71)/71.,1 if modes[i]==3 else (.35 if modes[i]==1 else 0),0,1))
 		counts[k]+=1
+		if bag_flags[i]:
+			bags.set_instance_transform(bag_index,transform3.translated_local(Vector3(.34,.59,.045)))
+			bag_index+=1
 		if modes[i]==1:
 			parcels.set_instance_transform(load_index,transform3.translated_local(Vector3(0,1.04,.29)))
 			load_index+=1

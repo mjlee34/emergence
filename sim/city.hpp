@@ -1,5 +1,6 @@
 #pragma once
 #include "geo/terrain.hpp"
+#include "sim/economy.hpp"
 #include "sim/life.hpp"
 #include <array>
 #include <cstdint>
@@ -63,6 +64,8 @@ public:
   const auto &events() const { return events_; }
   Point vehicle_position(const Vehicle &car, double &yaw,
                          double fraction = 0) const;
+  std::vector<int> road_route(int start, int target) const;
+  const Economy &economy() const { return economy_; }
   uint64_t digest() const;
 
 private:
@@ -80,6 +83,7 @@ private:
   };
   std::deque<Completion> completions_;
   Life life_;
+  Economy economy_;
   std::array<double, 4> bounds_{-30, 6, -30, 6};
   void spawn_vehicle();
   bool redevelop();

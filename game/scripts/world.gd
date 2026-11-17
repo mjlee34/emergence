@@ -3,12 +3,19 @@ const Landscape=preload("res://scripts/landscape.gd")
 const Town=preload("res://scripts/town.gd")
 const Orbit=preload("res://scripts/orbit.gd")
 const People=preload("res://scripts/people.gd")
+const Trade=preload("res://scripts/trade.gd")
 const Hud=preload("res://scripts/hud.gd")
 const TICKS_PER_SECOND=4.
 var model:=CityModel.new()
 var orbit:=Orbit.new()
 var land:=Landscape.new()
 var town:=Town.new()
+var trade:=Trade.new()
+var business_id:=-1
+var following_van:=-1
+var manifests:Array=[]
+var capture_freight:=false
+var capture_counter:=-1
 var hud:=Hud.new()
 var speed:=1
 var last_speed:=1
@@ -35,6 +42,8 @@ func _ready() -> void:
 		if arg.begins_with("--seed="): seed_value=int(arg.trim_prefix("--seed="))
 		if arg.begins_with("--capture="): capture_path=arg.trim_prefix("--capture=")
 		if arg.begins_with("--at="): capture_tick=maxi(0,int(arg.trim_prefix("--at=")))
+		if arg=="--freight": capture_freight=true
+		if arg.begins_with("--counter="): capture_counter=int(arg.trim_prefix("--counter="))
 		if arg=="--street": street_capture=true
 		if arg=="--meet": meet_capture=true
 		if arg.begins_with("--resident="): capture_resident=int(arg.trim_prefix("--resident="))
@@ -54,6 +63,7 @@ func _ready() -> void:
 	land.create(model)
 	add_child(town)
 	town.create(model,land)
+	add_child(trade)
 	add_child(people)
 	add_child(orbit)
 	if atlas:
@@ -75,6 +85,8 @@ func _ready() -> void:
 	hud.home_requested.connect(_fit_city)
 	hud.street_requested.connect(_street_view)
 	hud.meet_requested.connect(_meet)
+	hud.freight_requested.connect(_follow_delivery)
+	hud.counter_requested.connect(_view_business)
 	hud.district_requested.connect(_district_view)
 	if capture_tick>0: model.step(capture_tick)
 	if capture_path!="": speed=0
@@ -82,6 +94,10 @@ func _ready() -> void:
 	orbit.frame_city(state.bounds,1.)
 	if street_capture or (not atlas and not capture_detail and capture_path==""): _district_view(capture_district)
 	_sync()
+	if capture_counter>=0 and not model.business(capture_counter).is_empty():
+		business_id=capture_counter
+		_view_business()
+	if capture_freight: _follow_delivery()
 	if meet_capture: _meet()
 	if capture_resident>=0 and capture_resident<state.population: _watch(capture_resident)
 	_sync()
@@ -133,6 +149,18 @@ func _process(delta:float) -> void:
 
 func _sync() -> void:
 	var info:Dictionary={}
+	manifests=model.freight(remainder)
+	var run:Dictionary={}
+	if following_van>=0:
+		for order in manifests:
+			if order.id==following_van: run=order; break
+		if run.is_empty(): _view_business()
+		else:
+			var progress:=smoothstep(run.start+20.,run.arrival,state.tick+remainder)
+			orbit.azimuth=lerp_angle(_front_angle(run.source),_front_angle(run.shop),progress)
+			orbit.elevation=.65
+			orbit.pivot=run.position+Vector3.UP*1.0
+			orbit.update_view()
 	if selected>=0:
 		info=model.resident(selected,remainder)
 		if watching:
@@ -143,13 +171,57 @@ func _sync() -> void:
 	hud.display(state,speed,orbit.azimuth)
 	hud.sync_map(model,state.roads,state.buildings)
 	hud.show_life(state,info,model)
+	if business_id<0 and not manifests.is_empty(): business_id=manifests[0].shop
+	trade.sync(model,state,manifests,remainder,following_van,business_id)
+	hud.show_trade(model,model.business(business_id),run,manifests.size(),state.tick)
 	var sun_height:=sin((state.minute-360.)/1440.*TAU)
 	var daylight:=smoothstep(-.08,.38,sun_height)
 	light.light_energy=lerpf(.19,1.15,daylight)
 	light.light_color=Color("#a5c2df").lerp(Color("#fff0d5"),daylight)
 	atmosphere.ambient_light_energy=lerpf(.29,.35,daylight)
 
+func _follow_delivery() -> void:
+	if manifests.is_empty(): return
+	var chosen:Dictionary=manifests[0]
+	for order in manifests:
+		if order.shop==business_id and following_van!=order.id:
+			chosen=order
+			break
+	if following_van>=0:
+		for i in manifests.size():
+			if manifests[i].id==following_van:
+				chosen=manifests[(i+1)%manifests.size()]
+				break
+	business_id=chosen.shop
+	following_van=chosen.id
+	selected=-1
+	watching=false
+	orbit.following=false
+	orbit.extent=23.
+	orbit.pivot=chosen.position+Vector3.UP*1.0
+	orbit.update_view()
+
+func _front_angle(id:int) -> float:
+	var b:Dictionary=model.lot(id)
+	return b.yaw+(.0 if b.front_sign>0 else PI)+.55
+
+func _view_business() -> void:
+	following_van=-1
+	if business_id<0: return
+	var b:Dictionary=model.lot(business_id)
+	var front:Vector3=Basis(Vector3.UP,b.yaw)*Vector3(0,0,b.front_sign)
+	selected=-1
+	watching=false
+	orbit.following=false
+	orbit.azimuth=atan2(front.x,front.z)+.48
+	orbit.elevation=.53
+	orbit.extent=26.
+	orbit.pivot=b.pos+front*3.7+Vector3.UP*1.45
+	orbit.update_view()
+	hud.district_title="Market district" if b.use==1 else "Workshop district"
+
 func _fit_city() -> void:
+	following_van=-1
 	watching=false
 	selected=-1
 	orbit.home()
@@ -158,6 +230,7 @@ func _street_view() -> void:
 	_district_view(1)
 
 func _district_view(use:int) -> void:
+	following_van=-1
 	hud.district_title=["Residential streets","Market district","Workshop district"][use]
 	watching=false
 	selected=-1
@@ -170,6 +243,7 @@ func _district_view(use:int) -> void:
 		var d:=stop.distance_squared_to(Vector3(-30,4,6))
 		if d<nearest:
 			nearest=d
+			if use!=0: business_id=i
 			orbit.pivot=stop+Vector3.UP*1.4
 	orbit.following=false
 	orbit.extent=36
@@ -195,6 +269,7 @@ func _meet() -> void:
 	if selected>=0: _watch(selected)
 
 func _watch(id:int) -> void:
+	following_van=-1
 	selected=id
 	watching=true
 	orbit.following=false
@@ -209,9 +284,33 @@ func _unhandled_input(event:InputEvent) -> void:
 		elif click_start.distance_to(event.position)<4. and not event.shift_pressed:
 			var id:=people.pick(orbit,event.position,town.sites)
 			if id>=0: _watch(id)
+			else:
+				var at:=_pick_business(event.position)
+				if at>=0:
+					business_id=at
+					_view_business()
 	if event is InputEventMouseMotion and event.button_mask and event.position.distance_to(click_start)>4:
 		watching=false
-	if event is InputEventPanGesture: watching=false
+		following_van=-1
+	if event is InputEventPanGesture:
+		watching=false
+		following_van=-1
+
+func _pick_business(screen:Vector2) -> int:
+	var start:=orbit.project_ray_origin(screen)
+	var dir:=orbit.project_ray_normal(screen)
+	var best:=INF
+	var chosen:=-1
+	for i in town.sites.size():
+		var site:MeshInstance3D=town.sites[i]
+		var inv:=site.global_transform.affine_inverse()
+		var hit=site.get_aabb().intersects_ray(inv*start,inv.basis*dir)
+		if hit==null: continue
+		var dist:=start.distance_squared_to(site.global_transform*hit)
+		if dist<best:
+			best=dist
+			chosen=i
+	return chosen if not model.business(chosen).is_empty() else -1
 
 
 func _select_speed(value:int) -> void:

@@ -395,19 +395,14 @@ func _street_furniture(g,lot:Dictionary,w:float,d:float) -> void:
 			for chair in [-1,1]:
 				g.box(table+Vector3(chair*.77,.42,0),Vector3(.4,.16,.43),fabric)
 				g.box(table+Vector3(chair*.77,.22,0),Vector3(.15,.42,.15),Color("#645b49"))
-	elif lot.use==2:
-		for i in range(3):
-			var crate:=Vector3((i-1)*1.05,0,front)
-			g.box(crate+Vector3.UP*.54,Vector3(.96,1.04,1.04),Color("#b18c5d"))
-			g.box(crate+Vector3.UP*.7,Vector3(.99,.12,1.06),Color("#745d42"))
-	else:
+	elif lot.use==0:
 		g.box(Vector3(w*.36,.62,front),Vector3(.16,1.2,.16),Color("#876e55"))
 		g.box(Vector3(w*.36,1.22,front),Vector3(.44,.34,.44),Color("#7d8a79"))
 
 func _add_shop_sign(site:MeshInstance3D,lot:Dictionary,d:float) -> void:
 	if lot.use==0: return
 	var sign:=Label3D.new()
-	var names:=["BAKERY","CAFÉ","GROCER","BOOKS"] if lot.use==1 else ["FOUNDRY","JOINERY","PRINTWORKS","TEXTILE MILL"]
+	var names:=["BAKERY","CAFÉ","GROCER","OUTFITTER"] if lot.use==1 else ["FLOUR MILL","FOOD CO-OP","CREAMERY","TEXTILE MILL"]
 	sign.text=names[lot.style%4]
 	sign.font_size=40
 	sign.pixel_size=.012

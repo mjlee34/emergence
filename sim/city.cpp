@@ -82,6 +82,9 @@ City::City(uint32_t seed) : seed_(seed), random_(seed) {
   for (int i = 0; i < int(buildings_.size()); ++i)
     life_.open(*this, i, buildings_[i].capacity);
   life_.settle(*this);
+  for (int i = 0; i < int(buildings_.size()); ++i)
+    economy_.open(*this, i);
+  economy_.update(*this);
   for (int i = 0; i < 22; ++i)
     spawn_vehicle();
   record("Settlement established");
@@ -349,6 +352,14 @@ bool City::redevelop() {
 }
 void City::dispatch(Vehicle &v, int start) {
   int target = (start + 1 + draw() % (nodes_.size() - 1)) % nodes_.size();
+  v.route = road_route(start, target);
+  v.destination = target;
+  v.edge = v.route.back();
+  v.route.pop_back();
+  v.from = start;
+  v.along = 0;
+}
+std::vector<int> City::road_route(int start, int target) const {
   std::vector<int> via(nodes_.size(), -1);
   std::vector<double> cost(nodes_.size(),
                            std::numeric_limits<double>::infinity());
@@ -374,17 +385,13 @@ void City::dispatch(Vehicle &v, int start) {
       queue.push({arrival, next});
     }
   }
-  v.route.clear();
-  v.destination = target;
+  std::vector<int> edges;
   for (int n = target; n != start;) {
     int e = via[n];
-    v.route.push_back(e);
+    edges.push_back(e);
     n = roads_[e].a == n ? roads_[e].b : roads_[e].a;
   }
-  v.edge = v.route.back();
-  v.route.pop_back();
-  v.from = start;
-  v.along = 0;
+  return edges;
 }
 Point City::vehicle_position(const Vehicle &v, double &yaw,
                              double fraction) const {
@@ -415,6 +422,7 @@ void City::advance(int ticks) {
       auto project = completions_.front();
       capacity_ += project.beds;
       life_.open(*this, project.lot, project.beds);
+      economy_.open(*this, project.lot);
       completions_.pop_front();
     }
     const int plan = tick_ / planning_interval;
@@ -438,6 +446,7 @@ void City::advance(int ticks) {
       if (!built && !grow() && !redevelop())
         vacant_ticks_ = tick_ + 192 * planning_interval;
     }
+    economy_.update(*this);
     if (tick_ % (96 * planning_interval) == 0 &&
         int(vehicles_.size()) < std::min(115, 22 + population_ / 190))
       spawn_vehicle();
@@ -469,6 +478,7 @@ uint64_t City::digest() const {
     h *= 1099511628211ULL;
   };
   mix(life_.digest());
+  mix(economy_.digest());
   mix(seed_);
   mix(random_);
   mix(tick_);

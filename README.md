@@ -2,9 +2,9 @@
 
 Alder Reach opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
 
-![One resident commuting, working, shopping and returning home](captures/resident-day.jpg)
+![A wholesale order moving from the packing yard to the café and through the till](captures/local-trade.jpg)
 
-[Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
+[Follow a café delivery and sale](captures/local-trade.mp4) · [Watch Lina Gray’s day in 17 seconds](captures/resident-day.mp4) · [Morning commute at full resolution](captures/morning-commute.png)
 
 ## Play on Apple Silicon
 
@@ -12,6 +12,8 @@ Open `dist/EMERGENCE.app` after exporting. The simulation starts at **1×** with
 
 | Action | Control |
 | --- | --- |
+| Inspect a shop or factory | Click the building, or select Markets or Works and then View counter or View yard |
+| Track a wholesale order until the van finishes unloading | Follow delivery in the Local Trade panel |
 | Follow a pedestrian | Click the person or choose Meet a resident |
 | Visit a residential street, market or industrial yard | Homes, Markets or Works |
 | Return to the market street | V or Street view |
@@ -55,6 +57,14 @@ Every resident has a persistent address. Finished housing admits new residents, 
 
 With seed 147 the town opens with 1,331 residents, 881 employed and 83 vacancies. Workers walk to assigned workplaces, visit nearby shops for lunch, return to work and walk home. Other residents run daytime errands from home. Building occupancy and the activity counters follow those individual schedules. A camera-dependent sample supplies the visible crowd. Industrial yards show workers carrying cartons, and occupied windows light up at dusk.
 
+### Local trade
+
+Food producers supply bakeries, cafés and grocers. Textile mills supply outfitters. Each open business has its own inventory and cash account. Staff on shift earn staggered hourly payments from their employer’s till, and staffed workshops pack goods up to their storage limit. Residents with enough money buy one item during a shop visit. A successful sale transfers $12, removes one item from the shelf, and gives the shopper a receipt and a shopping bag.
+
+A shop running low can spend $6 per unit on a wholesale order. A staffed supplier with matching stock and a free delivery van packs up to 48 units. The cargo remains on order until the van reaches the shop’s curb and the driver finishes unloading. Empty shelves, insufficient funds or a lack of staff can prevent a sale. The right-hand panel shows the selected business’s stock, sales or output, till and payroll. Following a delivery shows the manifest and highlights its route on the map.
+
+The opening settlement starts with savings, working capital and shelf stock. This slice uses fixed prices, two commodity categories and a ten-minute trading interval. It omits raw-material supply chains, rents, loans and ownership transfers. A new business or arriving resident brings its own opening capital.
+
 | Road class | Carriageway | Function |
 | --- | --- | --- |
 | Arterial | 14.2 m | Four lanes, a planted median, and the first river crossing |
@@ -76,8 +86,8 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 | Module | Responsibility |
 | --- | --- |
 | `geo/` | Terrain height, water level relative to local ground, and fixture street coordinates in metres. The analytical fixture supplies the same surface to planning and rendering. |
-| `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, and event history. This library compiles independently of Godot. |
-| `replay/` | Version 3 checkpoints contain the seed, tick, and a state checksum which includes resident assignments. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
+| `replay/` | Version 4 checkpoints contain the seed, tick, and a state checksum which includes resident assignments, shop accounts, wallets and cargo in transit. Older versions use different growth and clock rules. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
@@ -86,7 +96,7 @@ To reproduce the lunch scene, follow resident #1301 (zero-based ID 1300) at tick
 - **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Two reserved crossings connect dry banks. District sites and major rights of way are fixture inputs. A free-angle planner for arbitrary geography will also need edge splitting and bridge-site selection.
 - **Terrain integration.** A single height sampler keeps planning and road rendering aligned. Real elevation tiles will need a projected local origin, shared elevation datum, shoreline masks, and a street grading pass. The current location is fictional.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
-- **Growth horizon.** This model fills a finite site and reaches capacity. Car traffic runs independently of the individual pedestrian itineraries. Household aging, wages, inventory, freight, congestion and decline remain future work.
+- **Growth horizon.** This model fills a finite site and reaches capacity. Car traffic runs independently of the individual pedestrian itineraries. Delivery vans carry actual wholesale orders. Household aging, road congestion and business closures remain future work.
 
 ## Verification and profiling
 
@@ -108,3 +118,5 @@ After building the extension and importing the project, run the integration chec
 ```
 
 These checks exercise pause, every speed, camera motion and reset, visible growth, vehicle movement, district views and resident selection using the playable scene. The native tests cover multiple seeds, batch equivalence, checkpoint recovery, population capacity, road and vehicle bounds, redevelopment, both bridge decks, expansion to the far bank, finite home and job capacities, and a resident’s commute, lunch trip and return home.
+
+The market checks reconcile sales with wallets and payroll with business expenses, conserve cash and stock across transfers, and verify that goods enter shop inventory after unloading. To inspect the opening café’s delivery use `--counter=1 --freight` after Godot’s `--` argument separator.

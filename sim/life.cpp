@@ -317,7 +317,7 @@ DailyState Life::routine(int id, double tick) const {
     if (t < r.finish + commute)
       return walk(r.work, r.home, r.commute, t - r.finish, commute);
   } else if (r.shop >= 0) {
-    double start = 510 + r.variation % 410, d = duration(r.errand, 120),
+    double start = 405 + r.variation % 545, d = duration(r.errand, 120),
            e = t - start;
     if (e >= 0 && e < d)
       return walk(r.home, r.shop, r.errand, e, d);

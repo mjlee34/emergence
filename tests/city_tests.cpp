@@ -9,8 +9,68 @@
     if (!(expr))                                                               \
       throw std::runtime_error(#expr);                                         \
   } while (false)
+void check_market() {
+  using namespace city;
+  City c(147);
+  const auto &e = c.economy();
+  auto cash = [&]() {
+    long long balance = 0;
+    for (auto &b : e.places())
+      balance += b.cash;
+    for (auto &w : e.wallets())
+      balance += w.cash;
+    return balance;
+  };
+  auto goods = [&]() {
+    int count = 0;
+    for (auto &b : e.places())
+      count += b.stock + b.pending;
+    return count;
+  };
+  auto opening_cash = cash();
+  int opening_goods = goods(), opening_sales = e.sales(),
+      opening_output = e.production(), people = c.population();
+  CHECK(!e.shipments().empty());
+  auto s = e.shipments().front();
+  CHECK(e.places()[s.shop].pending == s.units &&
+        e.places()[s.shop].goods == e.places()[s.supplier].goods);
+  CHECK(e.places()[s.supplier].staff > 0);
+  auto yard = e.van(c, s, s.ordered), dock = e.van(c, s, s.arrival);
+  CHECK(distance(yard.position, c.buildings()[s.supplier].pos) < 16);
+  CHECK(distance(dock.position, c.buildings()[s.shop].pos) < 16);
+  CHECK(distance(yard.position, dock.position) > 3);
+  c.advance(s.completed - 1);
+  auto before = e.places()[s.shop];
+  CHECK(before.pending == s.units && before.received == 0);
+  c.advance(1);
+  const auto &after = e.places()[s.shop];
+  CHECK(after.received == s.units && after.pending == 0 &&
+        after.stock == before.stock + s.units);
+  c.advance(1500 - c.tick());
+  CHECK(e.sales() > opening_sales && e.deliveries() > 0 &&
+        e.production() > opening_output);
+  for (int i = people; i < c.population(); ++i)
+    opening_cash += 48 + c.life().people()[i].variation % 36;
+  CHECK(cash() == opening_cash);
+  CHECK(goods() == opening_goods + (e.production() - opening_output) -
+                       (e.sales() - opening_sales));
+  int spending = 0, wages = 0, payroll = 0;
+  for (auto &w : e.wallets()) {
+    CHECK(w.cash >= 0);
+    if (w.spent)
+      CHECK(w.receipt >= 0 && c.buildings().at(w.shop).use == Use::Shops);
+    spending += w.spent;
+    wages += w.wages;
+  }
+  for (auto &b : e.places()) {
+    CHECK(b.cash >= 0 && b.stock >= 0 && b.pending >= 0);
+    payroll += b.wages;
+  }
+  CHECK(spending == retail_price * e.sales() && wages == payroll && wages > 0);
+}
 int main() {
   using namespace city;
+  check_market();
   auto start = std::chrono::steady_clock::now();
   for (auto seed : {147u, 42u, 2026u}) {
     City a(seed), b(seed);

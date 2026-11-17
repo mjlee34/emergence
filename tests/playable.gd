@@ -51,6 +51,18 @@ func run() -> void:
 	world._process(2.0)
 	check(world.state.tick==initial.tick and world.speed==0,"Pause changed simulation time")
 	check_pedestrian_click(world)
+	check(world.state.sales>0 and world.manifests.size()>0,"Market failed to open")
+	world.hud.follow_van.pressed.emit()
+	world._process(0)
+	var shipment_id:int=world.following_van
+	check(shipment_id>=0 and world.trade.trucks.has(shipment_id),"Delivery van missing")
+	check(world.hud.trading.text.contains("DELIVERY") and world.hud.freight_line.size()>1,"Freight manifest or map route missing")
+	var pos:Vector3=world.orbit.pivot
+	world._process(1)
+	check(pos==world.orbit.pivot,"Paused van moved")
+	world.hud.counter.pressed.emit()
+	check(world.following_van<0 and world.business_id>=0,"Counter view failed")
+	world._street_view()
 	for i in range(1,5):
 		world.hud.buttons[i].pressed.emit()
 		var before:int=world.state.tick
