@@ -389,6 +389,9 @@ public:
     for (auto p : r.path)
       path.push_back(Vector3(p.x, state.street_height(r, p), p.z));
     const auto &a = state.nodes()[r.a], &b = state.nodes()[r.b];
+    d["from_id"] = r.a;
+    d["to_id"] = r.b;
+    d["surveyed"] = r.surveyed;
     d["a"] = Vector2i(a.col, a.row);
     d["b"] = Vector2i(b.col, b.row);
     d["path"] = path;
@@ -403,15 +406,19 @@ public:
     Dictionary d;
     ERR_FAIL_INDEX_V(index, int(state.buildings().size()), d);
     const auto &b = state.buildings()[index];
-    d["pos"] = surface(b.pos);
+    d["pos"] = surface(b.centre(b.rear));
+    d["previous_pos"] = surface(b.centre(b.previous_rear));
+    d["depth_extension"] = std::abs(b.rear);
+    d["previous_depth"] = std::abs(b.previous_rear);
     d["yaw"] = b.yaw;
     d["style"] = b.style;
     d["use"] = int(b.use);
     d["frontage"] = b.frontage;
     const auto &r = state.roads()[b.frontage];
-    int k = city::distance(b.pos, r.path[2]) < city::distance(b.pos, r.path[6])
-                ? 2
-                : 6;
+    int k = b.sample;
+    d["wing"] = b.wing;
+    d["previous_wing"] = b.previous_wing;
+    d["surveyed"] = r.surveyed;
     auto at = r.path[k], next = r.path[k + 1];
     d["front_sign"] = ((next.x - at.x) * (b.pos.z - at.z) -
                            (next.z - at.z) * (b.pos.x - at.x) >

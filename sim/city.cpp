@@ -42,9 +42,11 @@ double road_height(const Road &road, Point p, const Site &site) {
 double City::street_height(const Road &road, Point p) const {
   return road_height(road, p, site_);
 }
-City::City(uint32_t seed, Site site, int township_through_tick)
+City::City(uint32_t seed, Site site, int township_through_tick,
+           int old_roads_through_tick)
     : site_(std::move(site)), seed_(seed), random_(seed),
-      township_through_tick_(township_through_tick) {
+      township_through_tick_(township_through_tick),
+      old_roads_through_tick_(old_roads_through_tick) {
   auto unit = [&] { return double(draw() >> 8) / 16777216.; };
   grid_phase_ = 6.2831853 * unit();
   grid_angle_ = .62 * (unit() - .5);
@@ -91,6 +93,12 @@ City::City(uint32_t seed, Site site, int township_through_tick)
   for (int i = 0; i < int(buildings_.size()); ++i)
     economy_.open(*this, i);
   economy_.update(*this);
+  if (old_roads_through_tick_ < 0) {
+    // The bus circuit is already occupied. Two outward approaches tie that
+    // small planned quarter to the open land the town will grow into.
+    grow_surveyed(true);
+    grow_surveyed(true);
+  }
   record("Settlement established");
 }
 std::vector<Vehicle> City::vehicles() const {
@@ -129,9 +137,14 @@ int City::add_road(int a, int c, int r, RoadClass type, bool bridge) {
       road.lengths[i] =
           road.lengths[i - 1] + distance(road.path[i], road.path[i - 1]);
   }
+  return commit_road(a, b, road);
+}
+int City::commit_road(int a, int b, Road road) {
   const int duration = road.bridge ? 1200 : 480 + 120 * int(road.type);
   road.started = tick_ ? tick_ : -duration;
   road.opens = road.started + duration;
+  if (road.surveyed && road.lengths.back() >= 60.)
+    road.available_lots = road.lengths.back() >= 88. ? 255 : 63;
   int e = roads_.size();
   roads_.push_back(road);
   if (tick_)
@@ -144,9 +157,16 @@ bool City::develop(int e, bool initial) {
   Road &road = roads_[e];
   if (!road.available_lots || road.bridge)
     return false;
-  int start = draw() % 4;
-  for (int j = 0; j < 4; ++j) {
-    int slot = (j + start) % 4, k = slot < 2 ? 2 : 6;
+  int slots = road.surveyed && road.lengths.back() >= 60.
+                  ? (road.lengths.back() >= 88. ? 8 : 6)
+                  : 4;
+  int start = draw() % slots;
+  for (int j = 0; j < slots; ++j) {
+    int slot = (j + start) % slots;
+    int k = slots == 8   ? 1 + 2 * (slot / 2)
+            : slots == 6 ? 2 + 2 * (slot / 2)
+            : slot < 2   ? 2
+                         : 6;
     unsigned bit = 1u << slot;
     if (!(road.available_lots & bit))
       continue;
@@ -156,16 +176,18 @@ bool City::develop(int e, bool initial) {
     double offset = (slot % 2 ? 1 : -1) * (road_width(road.type) * .5 + 6.6);
     p.x -= dz * offset / length;
     p.z += dx * offset / length;
-    if (site_.inland_water(p) || site_.elevation(p) < (site_.geographic() ? 1. : 2.5) ||
+    if (site_.inland_water(p) ||
+        site_.elevation(p) < (site_.geographic() ? 1. : 2.5) ||
         std::any_of(buildings_.begin(), buildings_.end(), [&](const auto &lot) {
-          return distance(p, lot.pos) < 11.6;
+          return lot.clearance(p, p) < 11.6;
         }))
       continue;
     // Preserve rights of way through undeveloped blocks so early corner lots
     // cannot sever a future cross-town route.
     bool clear = true;
     const auto &node = nodes_[road.a];
-    for (int c = node.col - 2; c <= node.col + 2 && clear; ++c) {
+    for (int c = node.col - 2; !road.surveyed && c <= node.col + 2 && clear;
+         ++c) {
       for (int r = node.row - 2; r <= node.row + 2 && clear; ++r) {
         for (auto [dc, dr] :
              std::array<std::pair<int, int>, 2>{{{1, 0}, {0, 1}}}) {
@@ -177,7 +199,8 @@ bool City::develop(int e, bool initial) {
       }
     }
     for (const auto &other : roads_) {
-      if (distance(p, other.path[4]) > 42)
+      if (distance(p, other.path[4]) >
+          (other.surveyed ? other.lengths.back() * .56 + 16. : 42.))
         continue;
       for (size_t k2 = 1; k2 < other.path.size(); ++k2)
         if (segment_distance(p, other.path[k2 - 1], other.path[k2]) <
@@ -188,6 +211,16 @@ bool City::develop(int e, bool initial) {
       if (distance(p, f.center) < f.radius + 6.4 ||
           segment_distance(p, f.gate, roads_[f.frontage].path[f.sample]) < 6.4)
         clear = false;
+    if (tick_ > old_roads_through_tick_) {
+      for (const auto &[ends, rank] : feeders_) {
+        if (segment_distance(p, survey_[ends.first].pos,
+                             survey_[ends.second].pos) <
+            road_width(rank) * .5 + 4.3) {
+          clear = false;
+          break;
+        }
+      }
+    }
     if (!clear)
       continue;
     int style = int(draw() >> 8) % 997;
@@ -215,8 +248,14 @@ bool City::develop(int e, bool initial) {
     Building lot{
         p, -std::atan2(dz, dx), style, 0, initial ? -build_time : tick_, use, e,
         1};
+    lot.sample = k;
+    if (!initial && tick_ > old_roads_through_tick_ && population_ >= 2400)
+      reserve_frontage(lot);
     lot.floors = target_floors(lot);
-    lot.capacity = use == Use::Housing ? 17 * lot.floors + style % 12 + 12 : 0;
+    lot.capacity =
+        use == Use::Housing
+            ? (17 + int(lot.wing * 2.)) * lot.floors + style % 12 + 12
+            : 0;
     buildings_.push_back(lot);
     bounds_[0] = std::min(bounds_[0], p.x);
     bounds_[1] = std::min(bounds_[1], p.z);
@@ -241,6 +280,27 @@ int City::target_floors(const Building &b) const {
   int base = 1 + b.style % 3;
   double visits = frontage_visits(b.frontage);
   bool frontage = roads_[b.frontage].type != RoadClass::Local;
+  if (tick_ > old_roads_through_tick_) {
+    if (population_ < 3000 || visits < 110.)
+      return base;
+    double proximity = 0.;
+    for (size_t i = 0; i < centres_.size(); ++i) {
+      double reach = i ? 140. : 168. + std::min(80., population_ * .001);
+      proximity =
+          std::max(proximity, 1. - distance(b.pos, centres_[i]) / reach);
+    }
+    double access = std::min(1., visits / 650.);
+    int shoulder =
+        base + int(access * (frontage ? 4. : 2.)) + int(proximity * 3.);
+    double maturity = std::clamp((population_ - 4500) / 25000., 0., 1.);
+    if (proximity > .28 && frontage) {
+      shoulder += int(proximity * access * maturity *
+                      (b.use == Use::Shops ? 14. : 10.));
+      if (b.wing >= 2. && proximity > .56 && b.style % 5 == 0)
+        shoulder += int(maturity * (7. + b.style % 7));
+    }
+    return std::min(shoulder, b.wing >= 2. ? 32 : 14);
+  }
   if (population_ >= 6500 && visits >= 530. && frontage)
     return 9 + b.style % 8;
   if (population_ >= 3200 && visits >= 260.)
@@ -266,8 +326,15 @@ bool City::redevelop() {
   if (chosen < 0)
     return false;
   auto &b = buildings_[chosen];
+  b.previous_wing = b.wing;
+  b.previous_rear = b.rear;
+  if (tick_ > old_roads_through_tick_)
+    reserve_frontage(b);
   int floors = target_floors(b);
-  int gain = b.use == Use::Housing ? 17 * (floors - b.floors) : 0;
+  int gain = b.use == Use::Housing
+                 ? (17 + int(b.wing * 2.)) * floors -
+                       (17 + int(b.previous_wing * 2.)) * b.floors
+                 : 0;
   b.previous_floors = b.floors;
   b.floors = floors;
   b.capacity += gain;
@@ -455,6 +522,11 @@ uint64_t City::digest() const {
     mix(r.bridge);
     mix(r.started);
     mix(r.opens);
+    if (r.surveyed)
+      for (const auto &p : r.path) {
+        mix(std::bit_cast<uint64_t>(p.x));
+        mix(std::bit_cast<uint64_t>(p.z));
+      }
   }
   for (const auto &b : buildings_) {
     mix(std::bit_cast<uint64_t>(b.pos.x));
@@ -466,6 +538,10 @@ uint64_t City::digest() const {
     mix(b.previous_floors);
     mix(b.floors);
     mix(b.capacity);
+    if (b.wing > 0.)
+      mix(std::bit_cast<uint64_t>(b.wing));
+    if (b.rear != 0.)
+      mix(std::bit_cast<uint64_t>(b.rear));
   }
   return h;
 }

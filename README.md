@@ -2,6 +2,12 @@
 
 Choose a point on Earth and descend from the map to a new settlement on its measured terrain. Gimje Plain, the Loire Valley and the Sacramento Valley are bundled for offline play. [Watch the flight into Gimje](captures/settlement-flight.mp4)
 
+On the inland Gimje Plain, the same seed grows from 1,710 residents and a three-storey skyline to 55,926 residents, 273 street segments and a 32-storey centre. All three panels use the same camera position, heading and zoom. [Full street network](captures/gimje-street-network.jpg) · [Skyline from the neighbourhood](captures/gimje-city-skyline.jpg)
+
+![The same streets at 1,710, 12,795 and 55,926 residents](captures/gimje-district-growth.jpg)
+
+The visual references informed the spacing of towers above lower street walls and the transition into the surrounding neighbourhoods. [Vancouver aerial photographs by PWL Partnership](https://www.pwlpartnership.com/projects/george-wainborn-park) · [City of Portland downtown views](https://www.portland.gov/sites/default/files/council-documents/2026/Future-of-Downtown-Presentation-1.pdf)
+
 The original Alder Reach fixture opens at 07:45. On the market street, commuters pass the bakery on their way to work. Click one to see their name, home, employer, and destination, then follow them through lunch and back home. Zoom out to watch the settlement grow on both sides of the river.
 
 ![The occupied skyline of Alder Reach in the late afternoon](captures/skyline-evening.jpg)
@@ -76,11 +82,13 @@ The Godot runtime, dependency checkout, and build outputs stay local. The applic
 
 The founding township covers **960 × 640 metres**. As the population grows from 30,000 to 75,000, the planner can reach progressively farther into the **2,880 × 1,920 metre** region. Terrain and travel demand determine which parts develop. Each new settlement draws a fresh seed, including repeat visits to the same coordinates. Enter a seed in the picker to replay a particular founding layout on the same terrain and build. The map location and seed appear together in the city HUD.
 
-When housing fills, the planner tallies residents’ scheduled commutes and shopping journeys at the streets serving their destinations and origins. It ranks possible links by trip volume and direction, connections, slope and access to undeveloped blocks. A busy collector can extend into an arterial. The planner surveys water crossings between dry banks. Busy frontages can attract taller buildings as the city grows. Additional capacity becomes available when construction finishes.
+When housing fills, the planner tallies residents’ scheduled commutes and shopping trips. Potential new streets connect surveyed points across slopes at different bearings. Main streets continue across several junctions. Side streets follow those bends and cross at staggered intervals. Closing a long detour and filling land between occupied streets both improve a proposal’s score. Vehicles and pedestrians use the same junctions visible in the road mesh.
+
+Staffed shops and nearby bus stops help establish a commercial centre. A larger city can develop a second centre around jobs at least 255 m away. Access, footfall, population and available frontage determine where taller buildings pay off. A deep tower lot needs room behind its existing front door. Wide residential plots can share a row of attached homes. Completed blocks acquire gardens, paved courts or service yards according to their street frontage.
 
 New streets open in stages. A roller follows the roadbed as pavement, shoulders and markings extend toward the next junction. Bridges advance across the river on piers and girders. Cars, freight and pedestrians can use the connection from its opening tick. Foundations, exposed floor slabs and cranes precede finished facades. Redevelopment dismantles the existing building before the new frame goes up. The founding settlement is already occupied when play begins. At 10× a local street takes 12 seconds and a building takes 36 seconds. At 1000× the same projects finish in 0.12 and 0.36 seconds.
 
-To watch the first street and its adjacent house from groundbreaking, launch with `-- --seed=147 --at=720 --site-road=26 --speed=10`. Press G to switch to following active sites.
+At 10×, press **G** to follow an active street or building site as the city grows.
 
 Every resident has a persistent address. Finished housing admits new residents, and shops and industrial workplaces hire up to their job capacity. Residents seeking work are matched against openings with a preference for nearby workplaces. Occupied housing and employment demand also influence new construction.
 
@@ -142,13 +150,13 @@ The historical lunch capture used resident #1301 at tick 1110. Current assignmen
 | --- | --- |
 | `geo/` | Local east/south metre grid, water mask and central elevation datum, plus the original analytical fixture. Planning, traffic, walking and rendering sample the same site. |
 | `sim/` | Seeded random stream, fixed ticks, population, completed housing, construction, append-only road graph, route selection, resident schedules, job assignment, cached sidewalk paths, local production and trade, freight routing, and event history. This library compiles independently of Godot. |
-| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 11 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. When opening a previous checkpoint, the simulation uses its original township boundary through the saved tick, verifies its checksum and enables regional expansion on subsequent ticks. The new record stores that transition for future replays. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
+| `replay/` | Geographic checkpoints embed the coordinate, sampled heights and lake mask for offline replay. Fixture version 12 and geographic version 8 checkpoints contain the seed, tick, and a state checksum which includes road opening ticks, previous building heights, resident assignments, shop accounts, wallets, travel choices, scheduled bus runs, civic sites, leisure visits and cargo in transit. When opening a previous checkpoint, the simulation reconstructs its historical boundary and street planner through the saved tick, verifies its checksum, and surveys new connections as it continues. The new record stores that transition for future replays. Restoration replays the simulation and verifies the checksum. Restore time scales with elapsed ticks. |
 | `extension/` | A narrow GDExtension adapter. It supplies road polylines, building records, statistics, resident records and itineraries, and packed vehicle and pedestrian poses to the scene. |
 | `game/` | Godot Forward+ presentation, terrain mesh, instanced forest, animated water and construction, camera, and observer controls. Rendering interpolates between fixed simulation ticks. |
 
 ## Engineering limits of this milestone
 
-- **Road geometry.** The planner explores adjacent points on a warped lattice, ranks expansion cost and connectivity, and rejects water, steep grades, and existing building footprints. Shared endpoints give vehicles navigable intersections. Crossings span short water gaps between dry banks. Layouts still follow two curved street axes. Free-angle junctions would require edge splitting.
+- **Road geometry.** The founding bus circuit anchors a small planned quarter. Outside it, new links use surveyed junction sites, with protected space for continuations and side streets. Accepted polylines meet at shared endpoints. An existing segment can receive a new junction only at one of its ends, which limits infill where a long frontage is already built out.
 - **Terrain integration.** Imported sites have a shared metre-based height sampler. The planner uses the site’s elevation and water mask to place roads and bridges. Street grading and finer river data remain future work.
 - **Time and reproducibility.** The tests compare identical seeds across different tick batches on the same build. Floating-point terrain sampling makes bit-identical replay across different math libraries a separate validation task.
 - **Growth horizon.** This model fills a finite site and reaches capacity. Residents drive their own trips and delivery vans carry wholesale orders. Line 1 keeps its founding circuit as the city expands. Additional lines, transfers, congestion, household aging and business closures remain future work.
@@ -171,7 +179,7 @@ By default the profiler advances 40,000 ticks. Pass increasing target ticks to m
 "$GODOT" --path game --resolution 1280x760 --disable-vsync --script ../tests/frame_profile.gd -- 1181800 overview 1000
 ```
 
-Seed 147 reached 112,621 residents, 672 streets and 1,376 buildings at tick 1,200,000. The developed bounds spanned 1,459 × 1,235 m. In the same city at approximately 111,000 residents, an M4 Pro running Forward+ at 1280 × 760 recorded median frame times of 37 ms in the overview and 25 ms at street level at 1×. The 1000× overview measured 46 ms median and 76 ms at the 95th percentile. These are short samples from a single machine. [Regional view at 110,745 residents](captures/regional-scale.jpg)
+With the surveyed street planner, seed 147 reached 105,858 residents, 481 street segments and 1,387 buildings at tick 1,200,000. The developed bounds spanned 1,614 × 1,074 m. A 60-frame sample of the 1000× overview near 50,000 residents on an M4 Pro at 1280 × 760 measured 43 ms median and 53 ms at the 95th percentile. [Earlier regional benchmark capture](captures/regional-scale.jpg)
 
 The simulation retains individual homes, jobs, wallets and travel choices. The market indexes residents by their scheduled hours, settles attendance first, then applies wages and purchases in resident order. The renderer shows up to 240 nearby private cars including the tracked driver, while bus loads cover the entire network. Distant buildings use simpler meshes. Outside the original valley, zooming in streams up to nine fine terrain tiles around the camera focus.
 
@@ -184,6 +192,7 @@ After building the extension and importing the project, run the integration chec
 "$GODOT" --headless --path game --script ../tests/landmark_view.gd
 "$GODOT" --headless --path game --script ../tests/weather.gd
 "$GODOT" --headless --fixed-fps 30 --path game --script ../tests/settlement.gd
+"$GODOT" --headless --path game --script ../tests/city_blocks.gd
 ```
 
 The map checks cover coordinate selection and search, the three bundled real sites, water rejection, the flight into the simulation and resuming a city. On macOS, running `"$GODOT" --path game --script ../tests/google_picker.gd` also exercises the embedded WebKit page using a local map test double. Live Google imagery requires a configured key.

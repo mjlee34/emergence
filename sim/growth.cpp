@@ -32,6 +32,8 @@ void City::survey_trips() {
       travel_demand_[end].north_south += .5 * lots[i].north_south;
     }
   }
+  if (tick_ > old_roads_through_tick_)
+    locate_centres();
 }
 
 double City::frontage_visits(int edge) const {
@@ -52,6 +54,9 @@ Point City::planning_extent() const {
 }
 
 bool City::grow() {
+  if (tick_ > old_roads_through_tick_)
+    return grow_surveyed();
+  // Kept for checksum-verified playback of earlier cities.
   struct Candidate {
     double score;
     int origin, col, row;

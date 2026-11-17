@@ -6,17 +6,20 @@ namespace city {
 std::string checkpoint(const City &c) {
   if (c.site().geographic()) {
     std::ostringstream out;
-    out << "EMERGENCE-GEO-7 " << c.seed() << ' ' << c.tick() << ' ' << c.digest()
-        << ' ' << c.township_through_tick() << ' ' << std::setprecision(std::numeric_limits<double>::max_digits10)
+    out << "EMERGENCE-GEO-8 " << c.seed() << ' ' << c.tick() << ' '
+        << c.digest() << ' ' << c.township_through_tick() << ' '
+        << c.old_roads_through_tick() << ' '
+        << std::setprecision(std::numeric_limits<double>::max_digits10)
         << c.site().latitude << ' ' << c.site().longitude;
     for (auto y : c.site().elevations) out << ' ' << y;
     out << ' ' << c.site().lake.size();
     for (auto wet : c.site().lake) out << ' ' << int(wet);
     return out.str();
   }
-  return "EMERGENCE-11 " + std::to_string(c.seed()) + " " +
+  return "EMERGENCE-12 " + std::to_string(c.seed()) + " " +
          std::to_string(c.tick()) + " " + std::to_string(c.digest()) + " " +
-         std::to_string(c.township_through_tick());
+         std::to_string(c.township_through_tick()) + " " +
+         std::to_string(c.old_roads_through_tick());
 }
 std::optional<City> restore(const std::string &record) {
   std::istringstream in(record);
@@ -29,12 +32,18 @@ std::optional<City> restore(const std::string &record) {
   // Replay an older city's history inside its original boundary, then allow
   // regional growth. Save the transition tick for later replays of this city.
   int township_through = tick;
-  if (version == "EMERGENCE-11" || version == "EMERGENCE-GEO-7") {
+  bool surveyed = version == "EMERGENCE-12" || version == "EMERGENCE-GEO-8";
+  if (surveyed || version == "EMERGENCE-11" || version == "EMERGENCE-GEO-7") {
     if (!(in >> township_through) || township_through < 0 || township_through > tick)
       return {};
   }
+  int old_roads_through = tick;
+  if (surveyed && (!(in >> old_roads_through) || old_roads_through < -1 ||
+                   old_roads_through > tick))
+    return {};
   Site site;
-  if (version == "EMERGENCE-GEO-7" || version == "EMERGENCE-GEO-6" || version == "EMERGENCE-GEO-5") {
+  if (version == "EMERGENCE-GEO-8" || version == "EMERGENCE-GEO-7" ||
+      version == "EMERGENCE-GEO-6" || version == "EMERGENCE-GEO-5") {
     if (!(in >> site.latitude >> site.longitude)) return {};
     site.elevations.resize(Site::side * Site::side);
     for (auto &y : site.elevations)
@@ -48,10 +57,12 @@ std::optional<City> restore(const std::string &record) {
       wet = value;
     }
     if (!site.suitable()) return {};
-  } else if (version != "EMERGENCE-11" && version != "EMERGENCE-10" && version != "EMERGENCE-9") return {};
+  } else if (version != "EMERGENCE-12" && version != "EMERGENCE-11" &&
+             version != "EMERGENCE-10" && version != "EMERGENCE-9")
+    return {};
   if (in >> trailing)
     return {};
-  City c(seed, std::move(site), township_through);
+  City c(seed, std::move(site), township_through, old_roads_through);
   c.advance(tick);
   if (c.digest() != digest)
     return {};

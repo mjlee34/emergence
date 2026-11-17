@@ -4,6 +4,9 @@ const ROOF:=Color("#45494b")
 const FLASHING:=Color("#777b7a")
 const STONE:=Color("#aba69c")
 
+static func row_house(lot:Dictionary) -> bool:
+	return lot.use==0 and lot.floors<=3 and lot.wing>=4.5 and lot.style%4!=0
+
 static func masonry_house(lot:Dictionary) -> bool:
 	return lot.floors in [2,3] and (lot.use==1 or lot.style%4!=0)
 
@@ -38,14 +41,24 @@ static func add(g,lot:Dictionary,w:float,d:float,nearby:bool) -> void:
 	var depth:=d+.58
 	# Podium and tower share the same footprint at every level of detail.
 	# Each subsequent mass sits on the previous volume's roof terrace.
-	_section(g,Vector2.ZERO,width,depth,0.,floor_height,.38,facade,tint,trim)
+	var podium:=floor_height
+	var tower_lot:bool=floors>=11 and lot.wing>=2.
+	if tower_lot: podium=floor_height*(3 if floors>=18 else 2)
+	var podium_skin:=Forms.Finish.LIMESTONE_FRONT if tower_lot and lot.use==1 else facade
+	_section(g,Vector2.ZERO,width,depth,0.,podium,.38,podium_skin,tint,trim)
+	if tower_lot:
+		width*=.83
+		depth*=.92
 	var center:=Vector2.ZERO
-	var start:=floor_height
+	var start:=podium
 	var chamfer:=.22
 	var form:int=(s/9)%4
 	if form==1: chamfer=minf(width,depth)*.23
 	if form==2: chamfer=minf(width,depth)*.12
 	var tall:=floors>=9
+	if tower_lot and lot.use==0 and s%3==0: facade=Forms.Finish.CURTAIN_WALL
+	if facade==Forms.Finish.CURTAIN_WALL:
+		tint=[Color("#bfd3d4"),Color("#c5cbcf"),Color("#cadbd4")][(s/11)%3]
 	if form==0 or form==2 or (form==3 and tall):
 		var split:=maxi(2,roundi(floors*(.61 if form==0 else .75)))*floor_height
 		_section(g,center,width,depth,start,split,chamfer,facade,tint,trim)
@@ -61,6 +74,14 @@ static func add(g,lot:Dictionary,w:float,d:float,nearby:bool) -> void:
 				g.box(Vector3(terrace_x,split+.36,end*depth*.31),Vector3(setback*.52,.65,depth*.24),Color("#797c75"))
 				g.box(Vector3(terrace_x,split+.88,end*depth*.31),Vector3(setback*.47,.48,depth*.23),Color("#52604c"))
 	_section(g,center,width,depth,start,height,chamfer,facade,tint,trim)
+	if floors>=6 and form==1 and lot.use==0:
+		# Recessed balcony bands wrap two street-facing corners.
+		g.finish=Forms.Finish.PLAIN
+		for floor_id in range(2,floors,2):
+			var y:=floor_id*floor_height
+			for sign_x in [-1.,1.]:
+				g.box(Vector3(sign_x*width*.29,y,lot.front_sign*(depth*.5+.28)),Vector3(width*.30,.19,.68),STONE)
+				g.box(Vector3(sign_x*width*.29,y+.59,lot.front_sign*(depth*.5+.57)),Vector3(width*.30,1.0,.09),Color("#8c9999"))
 	# Enclosed mechanical floors follow the roof outline of each family.
 	var top:=Vector3(center.x,height,center.y)
 	var plant:=Vector2(width*.47,depth*.39)

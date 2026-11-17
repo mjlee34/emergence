@@ -29,7 +29,7 @@ WalkPoint sidewalk(const City &city, const Road &r, int k, int side) {
 Entrance entrance(const City &city, int id) {
   const auto &b = city.buildings()[id];
   const auto &r = city.roads()[b.frontage];
-  int k = distance(b.pos, r.path[2]) < distance(b.pos, r.path[6]) ? 2 : 6;
+  int k = b.sample;
   auto p = r.path[k], q = r.path[k + 1];
   int side = (q.x - p.x) * (b.pos.z - p.z) - (q.z - p.z) * (b.pos.x - p.x) > 0
                  ? 1
@@ -183,7 +183,7 @@ void Life::open(const City &c, int id, int beds) {
   place.beds += beds;
   int jobs = b.use == Use::Housing ? 0
              : b.use == Use::Works ? 52 + 24 * b.floors
-                                   : 12 + 18 * b.floors;
+                                   : 12 + (18 + int(b.wing * 2.)) * b.floors;
   if (jobs > place.jobs && place.jobs == place.hired)
     employers_.push_back(id);
   if (b.use == Use::Shops && !place.jobs)

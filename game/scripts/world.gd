@@ -446,8 +446,10 @@ func _skyline() -> void:
 			densest=weight
 			orbit.pivot=focus
 	if densest>0.: orbit.extent=clampf(orbit.extent,75.,142.)
+	var framed_monument:=false
 	for site in town.greens:
 		if site.data.kind<6 or state.tick<site.data.opens: continue
+		framed_monument=true
 		# Frame the monument with the urban area on either side of it.
 		var middle:=Vector3(x,0.,z)
 		var base:Vector3=site.position
@@ -457,6 +459,16 @@ func _skyline() -> void:
 		orbit.extent=maxf(height*1.34,orbit.skyline_extent(orbit.pivot,base+Vector3.UP*height,bounds))
 		break
 	orbit.azimuth=_skyline_azimuth(orbit.azimuth)
+	if not framed_monument and densest>0.:
+		# Reserve headroom for every occupied tower in the central neighbourhood.
+		var sight:=Vector3(sin(orbit.azimuth)*cos(orbit.elevation),sin(orbit.elevation),cos(orbit.azimuth)*cos(orbit.elevation))
+		var up:=sight.cross(Vector3(cos(orbit.azimuth),0,-sin(orbit.azimuth)))
+		var half_lens:=tan(deg_to_rad(orbit.fov)*.5)
+		for site in town.sites:
+			var offset:Vector3=site.position-orbit.pivot
+			if Vector2(offset.x,offset.z).length()>125.: continue
+			var top:=offset+Vector3.UP*site.get_aabb().end.y
+			orbit.extent=maxf(orbit.extent,2.*(top.dot(up)*1.15+half_lens*top.dot(sight)))
 	orbit.update_view()
 	var lift:float=model.height_at(orbit.position.x,orbit.position.z)+4.-orbit.position.y
 	if lift>0.:

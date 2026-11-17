@@ -88,6 +88,17 @@ void fragment(){
 		float pane=smoothstep(inset,inset+.06,edge.x)*smoothstep(.12,.21,edge.y);
 		float metal=kind>=13 ? .46 : .16;
 		base=wall*COLOR.rgb;
+		if(kind==13){
+			// Continuous reflective glazing, with muted spandrels and slim mullions.
+			float vision=smoothstep(.08,.12,bay.y)*(1.-smoothstep(.80,.84,bay.y));
+			float mullion=smoothstep(.012,.034,edge.x);
+			float floor_line=smoothstep(.012,.042,edge.y);
+			float sky=mix(.74,1.12,clamp(local.y/95.,0.,1.));
+			vec3 glass=mix(vec3(.10,.17,.20),vec3(.24,.33,.37),vision)*sky;
+			glass*=.94+.12*hash(floor(at*4.)+building_key);
+			vec3 cladding=mix(vec3(.32,.35,.35),glass,mullion*floor_line);
+			base=mix(cladding*COLOR.rgb,wall*COLOR.rgb,.20);
+		}
 		detail.b=mix(.82,.21+.12*clouds,pane);
 		METALLIC=pane*metal;
 		spec=mix(.25,.78,pane);

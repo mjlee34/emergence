@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #define CHECK(expr)                                                            \
   do {                                                                         \
@@ -392,10 +393,11 @@ void check_public_places() {
     }
     CHECK(total==1);
   };
-  c.advance(320000-c.tick());
-  inspect(c,FacilityKind::WaterfrontMonument);
-  City other(13);
-  other.advance(280000);
+  City shore(33);
+  shore.advance(330000);
+  inspect(shore, FacilityKind::WaterfrontMonument);
+  City other(262);
+  other.advance(468000);
   inspect(other,FacilityKind::BoulevardMonument);
   // Sample design draws independently of how often a particular fixture
   // supplies the necessary waterfront or boulevard site.
@@ -413,6 +415,76 @@ void check_public_places() {
     }
   }
   CHECK(designs.size() == 6);
+}
+
+void check_grown_districts(const city::City &c) {
+  using namespace city;
+  // Traverse the open graph from the founding intersection. Every usable
+  // road must be reachable and share its exact endpoints with the routing
+  // graph.
+  std::vector<int> pending{0};
+  std::vector<bool> reached(c.nodes().size());
+  reached[0] = true;
+  while (!pending.empty()) {
+    int n = pending.back();
+    pending.pop_back();
+    for (int edge : c.nodes()[n].edges) {
+      const auto &road = c.roads()[edge];
+      if (road.opens > c.tick())
+        continue;
+      int next = road.a == n ? road.b : road.a;
+      if (reached[next])
+        continue;
+      reached[next] = true;
+      pending.push_back(next);
+    }
+  }
+  int tips = 0, open = 0;
+  for (const auto &node : c.nodes())
+    tips += node.edges.size() == 1;
+  CHECK(tips * 3 < int(c.nodes().size()));
+  for (size_t i = 0; i < c.roads().size(); ++i) {
+    const auto &r = c.roads()[i];
+    if (r.opens <= c.tick()) {
+      CHECK(reached[r.a] && reached[r.b]);
+      ++open;
+    }
+    CHECK(distance(r.path.front(), c.nodes()[r.a].pos) < 1e-7);
+    CHECK(distance(r.path.back(), c.nodes()[r.b].pos) < 1e-7);
+    if (!r.surveyed)
+      continue;
+    for (size_t j = 0; j < i; ++j) {
+      const auto &s = c.roads()[j];
+      if (r.a == s.a || r.a == s.b || r.b == s.a || r.b == s.b)
+        continue;
+      if (distance(r.path[4], s.path[4]) > r.lengths.back() + s.lengths.back())
+        continue;
+      for (int u = 1; u <= 8; ++u)
+        for (int v = 1; v <= 8; ++v)
+          CHECK(segment_clearance(r.path[u - 1], r.path[u], s.path[v - 1],
+                                  s.path[v]) > 0.01);
+    }
+  }
+  CHECK(open > int(c.nodes().size()) + 12);
+  int peak = 0, deep = 0, inner = 0, outer = 0, inner_floors = 0,
+      outer_floors = 0;
+  for (const auto &lot : c.buildings()) {
+    peak = std::max(peak, lot.floors);
+    deep += lot.rear != 0.;
+    double d = std::numeric_limits<double>::infinity();
+    for (auto centre : c.district_centres())
+      d = std::min(d, distance(lot.pos, centre));
+    if (d < 110.) {
+      ++inner;
+      inner_floors += lot.floors;
+    }
+    if (d > 270.) {
+      ++outer;
+      outer_floors += lot.floors;
+    }
+  }
+  CHECK(peak >= 18 && deep > 0 && inner > 0 && outer > 0);
+  CHECK(double(inner_floors) / inner > double(outer_floors) / outer + 2.);
 }
 
 int main() {
@@ -476,6 +548,7 @@ int main() {
   double initial_span = regional.bounds()[2] - regional.bounds()[0];
   regional.advance(9600 * planning_interval);
   CHECK(regional.bounds()[2] - regional.bounds()[0] > 3. * initial_span);
+  check_grown_districts(regional);
   auto bounds = regional.bounds();
   CHECK(bounds[0] < -township_half_width || bounds[1] < -township_half_depth ||
         bounds[2] > township_half_width || bounds[3] > township_half_depth);

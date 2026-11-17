@@ -40,7 +40,7 @@ std::vector<double> access_distances(const City &city, int edge, int sample,
 double walk_from_home(const City &city, int edge, int sample,
                       const std::vector<double> &cost, const Building &home) {
   const auto &r = city.roads()[home.frontage];
-  int k = distance(home.pos, r.path[2]) < distance(home.pos, r.path[6]) ? 2 : 6;
+  int k = home.sample;
   double along = edge == home.frontage
                      ? std::abs(r.lengths[k] - r.lengths[sample])
                      : std::min(cost[r.a] + r.lengths[k],
@@ -62,8 +62,8 @@ double suitability(const City &city, const Facility &f, double demand) {
       int sector = std::abs(dx) > std::abs(dz) ? int(dx > 0) : 2 + int(dz > 0);
       neighbours[sector] = std::max(neighbours[sector], 1. - d / 48.);
     }
-    if (d < f.radius + 6.4 || (b.use == Use::Works && d < 25.) ||
-        segment_distance(b.pos, curb, f.gate) < 6.4)
+    if (b.clearance(f.center, f.center) < f.radius + 6.4 ||
+        (b.use == Use::Works && d < 25.) || b.clearance(curb, f.gate) < 6.4)
       return 0;
   }
   double previous = city.height(curb);

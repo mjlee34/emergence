@@ -4,10 +4,7 @@
 namespace city {
 RoadCurb building_curb(const City &c, int lot) {
   auto &b = c.buildings()[lot];
-  auto &r = c.roads()[b.frontage];
-  return {b.frontage,
-          distance(r.path[2], b.pos) < distance(r.path[6], b.pos) ? 2 : 6,
-          b.pos};
+  return {b.frontage, b.sample, b.pos};
 }
 std::vector<DriveLeg> drive_route(const City &c, int origin, int target,
                                   double speed) {

@@ -1,10 +1,12 @@
 extends Node3D
 const Forms = preload("res://scripts/forms.gd")
 const Architecture=preload("res://scripts/urban_architecture.gd")
+const Junction=preload("res://scripts/street_junction.gd")
 const Roadworks=preload("res://scripts/roadworks.gd")
 const BuildingWorks=preload("res://scripts/building_works.gd")
 const WALLS = ["#bcb9b2","#a79d91","#968778","#b2b3af","#c1c0b9","#969b9a"]
 const ROOFS = ["#655a53","#485157","#6b615a","#606267","#736960","#545b5e"]
+var blocks=preload("res://scripts/city_blocks.gd").new()
 var model
 var land
 var market_lot:=-1
@@ -94,7 +96,7 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 		var work=roadworks[id]
 		if work.advance(time,land):
 			work.street.set_instance_shader_parameter("workfront",Vector4(0,0,0,2))
-			_open_road(work.data)
+			_open_road(id,work.data)
 			work.queue_free()
 			roadworks.erase(id)
 			opened=true
@@ -111,9 +113,12 @@ func sync(state: Dictionary, fraction: float, lamps:float) -> void:
 		if index<buildings: changed[index]=true
 		renewals+=1
 	for index in changed: _present_lot(index,state,time,true)
+	var new_lots:=buildings< int(state.buildings)
 	while buildings<state.buildings:
 		_present_lot(buildings,state,time,false)
 		buildings+=1
+	if state.population>=3200 and (opened or new_lots or not changed.is_empty()):
+		blocks.sync(self,model,lots)
 	if state.population>=3200 and (opened or state.population-last_paving_population>=150):
 		_pave_blocks(state.population,time,initial)
 	for id in construction.keys():
@@ -138,12 +143,15 @@ func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	lot.market_hall=id==market_lot
 	if replace: lots[id]=lot
 	else: lots.append(lot)
-	if lot.floors>=6 and not dense_blocks.has(lot.block):
+	if not lot.surveyed and lot.floors>=6 and not dense_blocks.has(lot.block):
 		dense_blocks[lot.block]=true
 		if paved.has(lot.block):
 			enclosed[lot.block]=true
 			last_paving_population=0
-	land.clear_lot(lot.pos)
+	if lot.wing>0.:
+		var axis:=Vector3(cos(lot.yaw),0.,-sin(lot.yaw))*float(lot.wing)
+		land.clear_street(PackedVector3Array([lot.pos-axis,lot.pos+axis]),6.8)
+	else: land.clear_lot(lot.pos)
 	detail_dirty=true
 	var active:bool=time<lot.started+state.construction_ticks
 	var previous:MeshInstance3D
@@ -161,6 +169,9 @@ func _present_lot(id:int,state:Dictionary,time:float,replace:bool) -> void:
 	if active and lot.previous_floors>0 and not previous:
 		var prior:=lot.duplicate()
 		prior.floors=lot.previous_floors
+		prior.wing=lot.previous_wing
+		prior.depth_extension=lot.previous_depth
+		prior.pos=lot.previous_pos
 		previous=_build(prior)
 	var camera:=get_viewport().get_camera_3d()
 	var detailed:bool=active or (camera!=null and camera.global_position.distance_squared_to(lot.pos)<190.*190.)
@@ -201,11 +212,47 @@ func update_detail(camera:Vector3) -> void:
 		previous.hide()
 		previous.queue_free()
 
+# Several households can share one long street parcel. Party walls, roof
+# stacks and individual front steps keep wide low-rise homes legible from above.
+func _terrace(lot:Dictionary,w:float,d:float,nearby:bool) -> MeshInstance3D:
+	var g=Forms.new(true)
+	var count:=3 if w>=17. else 2
+	var bay:=w/count
+	var height:float=lot.floors*3.05
+	var front:float=lot.front_sign*(d*.5+.05)
+	var roof:=Color(ROOFS[(lot.style/7)%ROOFS.size()])
+	var brick:bool=lot.style%3!=0
+	g.finish=Forms.Finish.WALK
+	g.box(Vector3(0,.01,0),Vector3(w+.8,.36,d+.90),Color("#b1a99d"))
+	for i in count:
+		var x:float=(i+.5)*bay-w*.5
+		var tint:Color=[Color("#e2d9cc"),Color("#e9ded4"),Color("#d3cbc1")][(lot.style+i)%3]
+		g.finish=Forms.Finish.BRICK_FRONT if brick else Forms.Finish.LIMESTONE_FRONT
+		g.box(Vector3(x,height*.5,0),Vector3(bay-.03,height,d),tint)
+		g.finish=Forms.Finish.PLAIN
+		var door_x:=x-bay*.24
+		g.box(Vector3(door_x,1.1,front),Vector3(1.03,2.2,.17),Color("#454c4c"))
+		if nearby:
+			g.box(Vector3(door_x,2.26,front),Vector3(1.36,.14,.32),Color("#bcb6aa"))
+			g.finish=Forms.Finish.WALK
+			g.box(Vector3(door_x,.18,front+lot.front_sign*.54),Vector3(1.46,.32,1.13),Color("#aca79a"))
+		g.finish=Forms.Finish.BRICK
+		var stack:=Vector3(x+bay*.35,height+1.65,d*.10)
+		g.box(stack,Vector3(.79,1.40,.55),Color("#927e70"))
+		g.finish=Forms.Finish.PLAIN
+		g.box(stack+Vector3.UP*.73,Vector3(.94,.14,.69),Color("#8e8781"))
+	_gable(g,w,d,height,roof,Color("#a5988c"))
+	var site=g.attach(self)
+	site.position=lot.pos
+	site.rotation.y=lot.yaw
+	return site
+
 func _district_block(lot:Dictionary) -> MeshInstance3D:
 	var s:int=lot.style
-	var w:=7.2+(s%4)*.62
-	var d:=5.8+(s%5)*.47
+	var w:=7.2+(s%4)*.62+2.*float(lot.wing)
+	var d:=5.8+(s%5)*.47+float(lot.depth_extension)
 	var floors:int=lot.floors
+	if Architecture.row_house(lot): return _terrace(lot,w,d,false)
 	var h:=floors*3.05 if Architecture.masonry_house(lot) else floors*2.65+.48
 	var wall:=Color(WALLS[s%WALLS.size()])
 	var roof:=Color(ROOFS[(s/7)%ROOFS.size()])
@@ -243,21 +290,43 @@ func _district_block(lot:Dictionary) -> MeshInstance3D:
 	return site
 
 func _ribbon(g,path: PackedVector3Array,width: float,lift: float,color: Color,offset:=0.,deck:=false) -> void:
-	var left: Array[Vector3]=[]
-	var right: Array[Vector3]=[]
-	for i in path.size():
-		var dir := (path[mini(i+1,path.size()-1)]-path[maxi(i-1,0)]).normalized()
-		var lateral := Vector3(-dir.z,0,dir.x).normalized()
-		for side in [-1,1]:
-			var p:Vector3 = path[i]+lateral*(offset+side*width*.5)
-			p.y=(path[i].y if deck else model.height_at(p.x,p.z))+lift
-			if side<0: left.append(p)
-			else: right.append(p)
-	for i in range(path.size()-1):
-		g.quad(left[i],right[i],right[i+1],left[i+1],color,Vector3.UP)
+	var samples:=PackedVector3Array([path[0]])
+	for k in range(1,path.size()):
+		var a:=path[k-1]
+		var b:=path[k]
+		var count:=maxi(1,ceili(a.distance_to(b)/3.))
+		for j in range(1,count+1): samples.append(a.lerp(b,j/float(count)))
+	var previous:=PackedVector3Array()
+	var strips:=maxi(1,ceili(width/4.))
+	for i in samples.size():
+		var dir:=samples[mini(i+1,samples.size()-1)]-samples[maxi(i-1,0)]
+		var lateral:=Vector3(-dir.z,0,dir.x).normalized()
+		var row:=PackedVector3Array()
+		for j in range(strips+1):
+			var p:=samples[i]+lateral*(offset+width*(j/float(strips)-.5))
+			p.y=(samples[i].y if deck else model.height_at(p.x,p.z))+lift
+			row.append(p)
+		if i:
+			for j in strips: g.quad(previous[j],previous[j+1],row[j+1],row[j],color,Vector3.UP)
+		previous=row
+
+# Slice a centerline by metres so lane paint and median noses have consistent
+# dimensions on both a short side street and a long winding boulevard.
+func _road_slice(path:PackedVector3Array,start:float,finish:float) -> PackedVector3Array:
+	var result:=PackedVector3Array()
+	var station:=0.
+	for i in range(1,path.size()):
+		var span:=path[i].distance_to(path[i-1])
+		var end:=station+span
+		if end>start and station<finish:
+			if result.is_empty(): result.append(path[i-1].lerp(path[i],maxf(0.,(start-station)/span)))
+			result.append(path[i-1].lerp(path[i],minf(1.,(finish-station)/span)))
+		station=end
+	return result
+
 
 func _register_block_edges(data:Dictionary) -> void:
-	if data.bridge: return
+	if data.bridge or data.surveyed: return
 	var a:Vector2i=data.a
 	var b:Vector2i=data.b
 	var origin:=a.min(b)
@@ -328,7 +397,7 @@ func _street(data:Dictionary,pending:bool,id:int) -> void:
 	var width:float=data.width
 	var rank:int=data["class"]
 	var deck:bool=data.bridge
-	var asphalt:=Color(["#888c7f","#606d6c","#414f53"][rank])
+	var asphalt:=Color(["#777976","#686c6c","#626767"][rank])
 	if pending:
 		# Compacted aggregate stays just ahead of the paving front.
 		_ribbon(g,path,width+1.,.31,Color("#927c61") if not deck else Color("#767b77"),0,deck)
@@ -342,17 +411,13 @@ func _street(data:Dictionary,pending:bool,id:int) -> void:
 	_ribbon(g,path,width,.405,asphalt,0,deck)
 	g.construction_lag=.24
 	g.finish=Forms.Finish.PLAIN
-	var interior:=path.slice(1,8)
-	if rank>0 and not deck:
-		# Mark the pedestrian crossing on each approach, outside the junction cap.
-		for k in [1,6]:
-			var fraction:=.67 if k==1 else .12
-			var stripe:=PackedVector3Array([path[k].lerp(path[k+1],fraction),path[k].lerp(path[k+1],fraction+.19)])
-			var offset:float=-width*.5+.6
-			while offset<width*.5-.35:
-				if rank!=2 or absf(offset)>1.1:
-					_ribbon(g,stripe,.36,.46,Color("#b7b6a8"),offset)
-				offset+=.92
+	var length:=0.
+	for k in range(1,path.size()): length+=path[k].distance_to(path[k-1])
+	var inset:=minf(length*.32,12.)
+	var interior:=_road_slice(path,inset,length-inset)
+	for side in [-1.,1.]:
+		g.finish=Forms.Finish.PLAIN
+		_ribbon(g,path,.15,.427,Color("#9c9e99"),side*(width*.5+.08),deck)
 	if rank==2:
 		_ribbon(g,interior,1.85,.45,Color("#c7bea3"),0,deck)
 		g.finish=Forms.Finish.MEADOW
@@ -362,10 +427,12 @@ func _street(data:Dictionary,pending:bool,id:int) -> void:
 			for i in [2,6]:
 				fixtures.append({"at":i/8.,"node":_street_tree(path[i]+Vector3.UP*.42)})
 	if rank>0:
-		for i in range(1,7,2):
-			var dash:=PackedVector3Array([path[i],path[i].lerp(path[i+1],.75)])
-			for stripe in ([-3.9,3.9] if rank==2 else [0.]):
-				_ribbon(g,dash,.15,.45,Color("#c7b58d") if rank==1 else Color("#c6c6ba"),stripe,deck)
+		var station:=inset
+		while station<length-inset-.6:
+			var dash:=_road_slice(path,station,minf(length-inset,station+2.25))
+			for stripe in ([-3.85,3.85] if rank==2 else [0.]):
+				_ribbon(g,dash,.13,.448,Color("#c2b992") if rank==1 else Color("#c8c8c1"),stripe,deck)
+			station+=6.75
 		var tangent:=(path[5]-path[3]).normalized()
 		var lateral:=Vector3(-tangent.z,0,tangent.x).normalized()
 		var p:=path[4]+lateral*(width*.5+.55)
@@ -419,30 +486,22 @@ func _street(data:Dictionary,pending:bool,id:int) -> void:
 		add_child(work)
 		work.setup(data,street,fixtures)
 		roadworks[id]=work
-	else: _open_road(data)
+	else: _open_road(id,data)
 
-func _open_road(data:Dictionary) -> void:
+func _open_road(edge:int,data:Dictionary) -> void:
+	blocks.opened(edge,data)
 	_register_block_edges(data)
 	var path:PackedVector3Array=data.path
-	var width:float=data.width
-	var rank:int=data["class"]
-	var asphalt:=Color(["#888c7f","#606d6c","#414f53"][rank])
-	for end_index in [0,1]:
-		var key:Vector2i=data.a if end_index==0 else data.b
-		var center:Vector3=path[0] if end_index==0 else path[-1]
-		if not junction_caps.has(key) or junction_caps[key].rank<rank:
-			if junction_caps.has(key): junction_caps[key].node.queue_free()
-			var cap=Forms.new(true)
-			cap.finish=Forms.Finish.ROAD
-			var radius:=width*.54+.24
-			center.y=model.height_at(center.x,center.z)+.437
-			for i in range(20):
-				var a:=center+Vector3(cos(TAU*i/20.),0,sin(TAU*i/20.))*radius
-				var b:=center+Vector3(cos(TAU*(i+1)/20.),0,sin(TAU*(i+1)/20.))*radius
-				a.y=model.height_at(a.x,a.z)+.437
-				b.y=model.height_at(b.x,b.z)+.437
-				cap.triangle(center,a,b,asphalt,Vector3.UP)
-			junction_caps[key]={"rank":rank,"node":cap.attach(self)}
+	for at_end in [false,true]:
+		var id:int=data.to_id if at_end else data.from_id
+		var center:Vector3=path[-1] if at_end else path[0]
+		var tangent:Vector3=(path[-2] if at_end else path[1])-center
+		var junction:Dictionary=junction_caps.get(id,{"arms":[],"node":null})
+		junction.arms.append({"dir":Vector2(tangent.x,tangent.z).normalized(),"half":data.width*.5,
+			"rank":data["class"],"length":path[0].distance_to(path[-1])})
+		if junction.node: junction.node.queue_free()
+		junction.node=Junction.new().rebuild(self,model,center,junction.arms)
+		junction_caps[id]=junction
 
 var street_crown:Mesh
 func _street_tree(at:Vector3) -> MeshInstance3D:
@@ -457,9 +516,10 @@ func _street_tree(at:Vector3) -> MeshInstance3D:
 func _build(lot: Dictionary) -> MeshInstance3D:
 	var s:int=lot.style
 	var use:int=lot.use
-	var w:=7.2+(s%4)*.62
-	var d:=5.8+(s%5)*.47
+	var w:=7.2+(s%4)*.62+2.*float(lot.wing)
+	var d:=5.8+(s%5)*.47+float(lot.depth_extension)
 	var floors:int=lot.floors
+	if Architecture.row_house(lot): return _terrace(lot,w,d,true)
 	if floors>=4 or use==2:
 		return _urban_block(lot,w,d)
 	var h:=floors*3.05 if Architecture.masonry_house(lot) else floors*2.65+.48

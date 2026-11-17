@@ -24,7 +24,7 @@ double speed_factor(RoadClass type);
 struct Road {
   int a, b;
   RoadClass type;
-  bool bridge;
+  bool bridge = false, surveyed = false;
   int started = 0, opens = 0;
   unsigned available_lots = 15;
   std::array<Point, 9> path;
@@ -38,7 +38,10 @@ struct Building {
   int style, capacity, started;
   Use use;
   int frontage, floors;
-  int previous_floors = 0;
+  int previous_floors = 0, sample = 2;
+  double wing = 0., previous_wing = 0., rear = 0., previous_rear = 0.;
+  Point centre(double depth) const;
+  double clearance(Point a, Point b) const;
 };
 enum class FacilityKind { Park, Playground, School, Hospital, Fire, Police, BoulevardMonument, WaterfrontMonument };
 inline bool is_service(FacilityKind k) {
@@ -75,11 +78,13 @@ struct Event {
 };
 class City {
 public:
-  explicit City(uint32_t seed = 147, Site site = {}, int township_through_tick = 0);
+  explicit City(uint32_t seed = 147, Site site = {},
+                int township_through_tick = 0, int old_roads_through_tick = -1);
   const Site &site() const { return site_; }
   double height(Point p) const { return site_.height(p); }
   Point planning_extent() const;
   int township_through_tick() const { return township_through_tick_; }
+  int old_roads_through_tick() const { return old_roads_through_tick_; }
   double street_height(const Road &road, Point p) const;
   void advance(int ticks);
   Weather weather(double fraction = 0.) const {
@@ -98,6 +103,7 @@ public:
   std::vector<Vehicle> vehicles() const;
   const auto &renewals() const { return renewals_; }
   const auto &bounds() const { return bounds_; }
+  const auto &district_centres() const { return centres_; }
   const auto &responses() const { return responses_; }
   const auto &events() const { return events_; }
   Point vehicle_position(const Vehicle &car, double &yaw,
@@ -109,7 +115,7 @@ public:
 private:
   Site site_;
   uint32_t seed_, random_;
-  int township_through_tick_;
+  int township_through_tick_, old_roads_through_tick_;
   double grid_angle_, grid_phase_, block_width_;
   Point workshop_site_;
   Point street_point(double column, double row) const;
@@ -143,10 +149,29 @@ private:
   std::array<double, 4> bounds_{-30, 6, -30, 6};
   bool connected(int node) const;
   bool redevelop();
+  std::vector<Point> centres_;
+  void locate_centres();
+  void reserve_frontage(Building &b) const;
   int target_floors(const Building &b) const;
   uint32_t draw();
   int find_node(int c, int r) const;
   bool grow();
+  bool grow_surveyed(bool feeder_only = false);
+  struct SurveyPoint {
+    Point pos;
+    int junction = -1;
+    std::vector<int> neighbours;
+    bool surveyed = false;
+  };
+  std::vector<SurveyPoint> survey_;
+  std::vector<int> junction_sites_;
+  std::map<std::pair<int, int>, std::vector<int>> survey_bins_;
+  std::map<std::pair<int, int>, int> blocked_width_;
+  std::map<std::pair<int, int>, RoadClass> feeders_;
+  void survey_land();
+  void survey_neighbours(int origin);
+  int commit_road(int a, int b, Road road);
+
   int add_road(int a, int c, int r, RoadClass type, bool bridge = false);
   bool develop(int edge, bool initial);
   void record(std::string message);

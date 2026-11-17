@@ -11,8 +11,8 @@ func check(ok:bool,message:String) -> void:
 		push_error(message)
 
 func run() -> void:
-	for scenario in [[0,191480,"orbit",140.],[12,329720,"liberty",94.],[13,272120,"lattice",154.],
-			[29,203000,"lantern",90.],[31,272120,"arch",94.],[120,168440,"clock",104.]]:
+	for scenario in [[156,145000,"orbit",140.],[33,329000,"liberty",94.],[262,468000,"lattice",154.],
+			[41,248000,"lantern",90.],[31,283000,"arch",94.],[139,306000,"clock",104.]]:
 		var world=load("res://main.tscn").instantiate()
 		world.model=CityModel.new()
 		world.model.reset(scenario[0])
